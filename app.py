@@ -531,15 +531,23 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
     elif thumb and _o.path.exists(str(thumb)):
         thumb_path=str(thumb)
     async def _do():
-        client=TelegramClient(StringSession(_KSESS),int(_KID),_KHASH)
+        client=TelegramClient(StringSession(_KSESS),int(_KID),_KHASH,max_upload_connections=4)
         try:
             await client.connect()
             me=await client.get_me()
             _p(f"[*] telethon: connected as {me.first_name} (bot={me.bot})")
             ent=await client.get_entity(int(K2))
             _p("[*] telethon: uploading (2GB limit)...")
-            msg=await client.send_file(ent,path,caption=caption,parse_mode="html",
-                                      force_document=True,thumb=thumb_path or None)
+            # photo (thumbnail) pehle — poori badi image upar
+            if thumb_path and _o.path.exists(thumb_path):
+                try:
+                    await client.send_file(ent,thumb_path,caption=caption,parse_mode="html")
+                    _p("[*] photo (thumbnail) sent with caption")
+                except Exception as ex:
+                    _p(f"[!] photo send fail: {str(ex)[:80]}")
+            # document — asli file name ke saath, fast upload
+            msg=await client.send_file(ent,path,force_document=True,
+                                      file_name=name,part_size_kb=512)
             fid=""
             if getattr(msg,"video",None) is not None:
                 fid=str(msg.video.id)
@@ -600,23 +608,27 @@ def _turl(mid):
     if cid.startswith("-100"):
         cid=cid[4:]
     return f"https://t.me/c/{cid}/{mid}"
-def _caption(meta,q,target,web):
+def _caption(meta,q,target,web,thumb_url=""):
     lines=[]
     if meta.get("title"):
-        lines.append(f"\U0001F3AC <b>{_esc(meta['title'])}</b>")
+        lines.append(f"\U0001F3AC <code>{_esc(meta['title'])}</code>")
     se=[]
     if meta.get("show_title"):
         se.append(_esc(meta["show_title"]))
     if meta.get("season") is not None and meta.get("episode") is not None:
-        se.append(f"S{meta['season']}-E{meta['episode']}")
+        se.append(f"<b>S{meta['season']}-E{meta['episode']}</b>")
     if se:
-        lines.append("\U0001F4FA "+" \u00B7 ".join(se))
+        lines.append("\U0001F4FA <code>"+" \u00B7 ".join(se)+"</code>")
     if q:
         lines.append(f"\u2699\uFE0F Quality: {_esc(q)}")
-    if target:
+    if target and web:
+        lines.append(f"\U0001F3AF Target: <a href=\"{_esc(web)}\">{_esc(target)}</a>")
+    elif target:
         lines.append(f"\U0001F3AF Target: {_esc(target)}")
+    if thumb_url:
+        lines.append(f"\U0001F5BC\uFE0F <a href=\"{_esc(thumb_url)}\">Thumbnail</a>")
     if web:
-        lines.append(f"\U0001F517 Web: {_esc(web)}")
+        lines.append(f"\U0001F517 Web: <a href=\"{_esc(web)}\">{_esc(web)}</a>")
     return "\n".join(lines)
 def _split_send(link,base,cap,thumb):
     tmp="/tmp/big.mp4"
@@ -699,7 +711,7 @@ def main():
         _y.exit(1)
     job=link.rstrip("/").split("/")[-1]
     _p(f"   ready | {size/(1024*1024):.0f} MB | {q}")
-    cap=_caption(meta,q,_TGT or K5,web)
+    cap=_caption(meta,q,_TGT or K5,web,thumb or "")
     thumb=meta.get("image") or None
     if size and size>_SPLIT and not _KSESS:
         _p(f"[!] {size/(1024*1024):.0f} MB > limit — split")
