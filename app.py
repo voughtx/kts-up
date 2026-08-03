@@ -521,7 +521,12 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
                         if not c:
                             break
                         f.write(c)
-        except Exception:
+            if _o.path.getsize(thumb_path)<1000:
+                thumb_path=None
+            else:
+                _p(f"[*] thumb downloaded ({_o.path.getsize(thumb_path)} B)")
+        except Exception as ex:
+            _p(f"[!] thumb dl fail: {str(ex)[:80]}")
             thumb_path=None
     elif thumb and _o.path.exists(str(thumb)):
         thumb_path=str(thumb)
@@ -533,14 +538,16 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             _p(f"[*] telethon: connected as {me.first_name} (bot={me.bot})")
             ent=await client.get_entity(int(K2))
             _p("[*] telethon: uploading (2GB limit)...")
-            msg=await client.send_file(ent,path,caption=caption,parse_mode="html",thumb=thumb_path or None)
+            msg=await client.send_file(ent,path,caption=caption,parse_mode="html",
+                                      force_document=True,thumb=thumb_path or None)
             fid=""
             if getattr(msg,"video",None) is not None:
                 fid=str(msg.video.id)
             elif getattr(msg,"document",None) is not None:
                 fid=str(msg.document.id)
+            has_thumb="yes" if getattr(msg,"media",None) and getattr(msg.media,"document",None) and getattr(msg.media.document,"thumbs",None) else "no"
             mid=getattr(msg,"id",None)
-            _p(f"[*] telethon: done msg_id={mid}")
+            _p(f"[*] telethon: done msg_id={mid} thumb={has_thumb}")
             return {"message_id":mid,"video":{"file_id":fid}},None
         except Exception as ex:
             return None,f"telethon fail: {str(ex)[:200]}"
@@ -567,8 +574,8 @@ def _relay_cleanup(tag):
     _p(f"[ok] relay release {tag} deleted")
 
 def _push(url,caption,thumb=None,fname=None):
-    api=f"{_TBASE}{K1}/sendVideo"
-    payload={"chat_id":K2,"video":url,"caption":caption,"parse_mode":"HTML","supports_streaming":"true"}
+    api=f"{_TBASE}{K1}/sendDocument"
+    payload={"chat_id":K2,"document":url,"caption":caption,"parse_mode":"HTML"}
     if thumb:
         payload["thumbnail"]=thumb
     data=_u.urlencode(payload).encode()
