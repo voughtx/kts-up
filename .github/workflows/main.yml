@@ -20,6 +20,10 @@ on:
         description: "preview only"
         required: false
         default: "false"
+      no_fallback:
+        description: "true = sirf pyrogram, telethon fallback band"
+        required: false
+        default: "false"
   repository_dispatch:
     types: [run-task]
 concurrency:
@@ -65,5 +69,6 @@ jobs:
           QUALITY: ${{ inputs.quality }}
           TARGET: ${{ inputs.target }}
           DRY_RUN: ${{ inputs.dry_run }}
+          NO_FALLBACK: ${{ inputs.no_fallback }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python app.py
