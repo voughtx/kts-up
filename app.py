@@ -545,9 +545,17 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
                     _p("[*] photo (thumbnail) sent with caption")
                 except Exception as ex:
                     _p(f"[!] photo send fail: {str(ex)[:80]}")
-            # document — asli file name ke saath, fast upload
+            # document — asli file name ke saath, fast upload + progress
+            fsz=_o.path.getsize(path)
+            _lastp=[0]
+            def _prog(c,t):
+                pct=int(c*100/t) if t else 0
+                if pct-_lastp[0]>=10 or pct==100:
+                    _lastp[0]=pct
+                    _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB)",flush=True)
             msg=await client.send_file(ent,path,force_document=True,
-                                      file_name=name,part_size_kb=512)
+                                      file_name=name,part_size_kb=512,
+                                      progress_callback=_prog)
             fid=""
             if getattr(msg,"video",None) is not None:
                 fid=str(msg.video.id)
@@ -711,8 +719,8 @@ def main():
         _y.exit(1)
     job=link.rstrip("/").split("/")[-1]
     _p(f"   ready | {size/(1024*1024):.0f} MB | {q}")
-    cap=_caption(meta,q,_TGT or K5,web,thumb or "")
     thumb=meta.get("image") or None
+    cap=_caption(meta,q,_TGT or K5,web,thumb or "")
     if size and size>_SPLIT and not _KSESS:
         _p(f"[!] {size/(1024*1024):.0f} MB > limit — split")
         base=(name or "item").replace(".mp4","")
