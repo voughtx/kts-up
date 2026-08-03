@@ -538,24 +538,30 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             _p(f"[*] telethon: connected as {me.first_name} (bot={me.bot})")
             ent=await client.get_entity(int(K2))
             _p("[*] telethon: uploading (2GB limit)...")
-            # photo (thumbnail) pehle — poori badi image upar
-            if thumb_path and _o.path.exists(thumb_path):
-                try:
-                    await client.send_file(ent,thumb_path,caption=caption,parse_mode="html")
-                    _p("[*] photo (thumbnail) sent with caption")
-                except Exception as ex:
-                    _p(f"[!] photo send fail: {str(ex)[:80]}")
-            # document — asli file name ke saath, fast upload + progress
+            # document — asli file name ke saath, thumbnail attached, progress
+            # (Telegram me photo+file ek message me nahi ho sakte — isliye
+            #  sirf document, uske andar thumbnail lagta hai)
             fsz=_o.path.getsize(path)
-            _lastp=[0]
+            _st=[_t.time(),0,0]  # [last_print_time, last_bytes, chunk_kb]
             def _prog(c,t):
-                pct=int(c*100/t) if t else 0
-                if pct-_lastp[0]>=10 or pct==100:
-                    _lastp[0]=pct
-                    _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB)",flush=True)
-            up=await client.upload_file(path,part_size_kb=512,file_name=name,
-                                        progress_callback=_prog)
-            msg=await client.send_file(ent,up,force_document=True,thumb=thumb_path or None)
+                now=_t.time()
+                if now-_st[0]>=10 or c>=t:
+                    dt=now-_st[0]
+                    spd=((c-_st[1])/(1024*1024)/dt) if dt>0 else 0
+                    _st[0]=now
+                    _st[1]=c
+                    pct=int(c*100/t) if t else 0
+                    _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | speed {spd:.1f} MB/s | chunk {_st[2]}KB",flush=True)
+            _st[2]=1024
+            try:
+                up=await client.upload_file(path,part_size_kb=1024,file_name=name,
+                                            progress_callback=_prog)
+            except Exception:
+                _st[2]=512
+                up=await client.upload_file(path,part_size_kb=512,file_name=name,
+                                            progress_callback=_prog)
+            msg=await client.send_file(ent,up,force_document=True,thumb=thumb_path or None,
+                                       caption=caption,parse_mode="html")
             fid=""
             if getattr(msg,"video",None) is not None:
                 fid=str(msg.video.id)
@@ -629,14 +635,15 @@ def _caption(meta,q,target,web,thumb_url=""):
         lines.append("\U0001F4FA <code>"+" \u00B7 ".join(se)+"</code>")
     if q:
         lines.append(f"\u2699\uFE0F Quality: {_esc(q)}")
-    if target and web:
-        lines.append(f"\U0001F3AF Target: <a href=\"{_esc(web)}\">{_esc(target)}</a>")
+    # Target: web domain ka naam (e.g. "Kartoons") — clickable link
+    if web:
+        dom=web.split("//")[-1].split("/")[0]
+        lab=dom.split(".")[0].capitalize() if "." in dom else dom
+        lines.append(f"\U0001F3AF Target: <a href=\"{_esc(web)}\">{_esc(lab)}</a>")
     elif target:
         lines.append(f"\U0001F3AF Target: {_esc(target)}")
     if thumb_url:
         lines.append(f"\U0001F5BC\uFE0F <a href=\"{_esc(thumb_url)}\">Thumbnail</a>")
-    if web:
-        lines.append(f"\U0001F517 Web: <a href=\"{_esc(web)}\">{_esc(web)}</a>")
     return "\n".join(lines)
 def _split_send(link,base,cap,thumb):
     tmp="/tmp/big.mp4"
