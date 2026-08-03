@@ -45,7 +45,7 @@ _K=_o.environ.get("KEY_9","")
 _G=_o.environ.get("KEY_10","")
 _TB=_o.environ.get("KEY_11","")
 _TT=_o.environ.get("KEY_12","")
-_TG=_o.environ.get("KEY_13","")
+_TG=_o.environ.get("KEY_13","").rstrip("/")
 _REF=_o.environ.get("KEY_14","")
 _WEB=_o.environ.get("KEY_15","")
 _p(f"[dbg] k1_len={len(K1)} k2_len={len(K2)} tg={_TG!r} ref={_REF!r} web={_WEB!r}")
@@ -514,6 +514,12 @@ def main():
     if not K3:
         _p("missing KEY_3")
         _y.exit(1)
+    try:
+        gm=_req.get(f"{_TG}/{K1}/getMe",timeout=30)
+        gj=gm.json()
+        _p(f"[dbg] getMe ok={gj.get('ok')} err={gj.get('description','')}")
+    except Exception as ex:
+        _p(f"[dbg] getMe call fail: {str(ex)[:120]}")
     shows=_shows(K6)
     if not shows:
         _p("no targets")
