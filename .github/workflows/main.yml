@@ -25,6 +25,8 @@ on:
 concurrency:
   group: run-task
   cancel-in-progress: false
+permissions:
+  contents: write
 jobs:
   run:
     runs-on: ubuntu-latest
