@@ -1,1 +1,63 @@
-OG
+name: ci
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      item_id:
+        description: "optional"
+        required: false
+        default: ""
+      quality:
+        description: "best / 1080 / 720 / 360"
+        required: false
+        default: "best"
+      target:
+        description: "label"
+        required: false
+        default: ""
+      dry_run:
+        description: "preview only"
+        required: false
+        default: "false"
+  repository_dispatch:
+    types: [run-task]
+concurrency:
+  group: run-task
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: setup
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: deps
+        run: pip install -r requirements.txt
+      - name: execute
+        env:
+          KEY_1: ${{ secrets.KEY_1 }}
+          KEY_2: ${{ secrets.KEY_2 }}
+          KEY_3: ${{ secrets.KEY_3 }}
+          KEY_4: ${{ secrets.KEY_4 }}
+          KEY_5: ${{ secrets.KEY_5 }}
+          KEY_6: ${{ secrets.KEY_6 }}
+          KEY_7: ${{ secrets.KEY_7 }}
+          KEY_8: ${{ secrets.KEY_8 }}
+          KEY_9: ${{ secrets.KEY_9 }}
+          KEY_10: ${{ secrets.KEY_10 }}
+          KEY_11: ${{ secrets.KEY_11 }}
+          KEY_12: ${{ secrets.KEY_12 }}
+          KEY_13: ${{ secrets.KEY_13 }}
+          KEY_14: ${{ secrets.KEY_14 }}
+          KEY_15: ${{ secrets.KEY_15 }}
+          ITEM_ID: ${{ inputs.item_id }}
+          QUALITY: ${{ inputs.quality }}
+          TARGET: ${{ inputs.target }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python app.py
