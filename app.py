@@ -34,6 +34,16 @@ except ImportError:
         _HAS_TT=True
     except Exception:
         _HAS_TT=False
+try:
+    from pyrogram import Client as _Pyro
+    _HAS_PY=True
+except ImportError:
+    try:
+        _s.check_call([_y.executable,"-m","pip","install","-q","pyrogram TgCrypto"])
+        from pyrogram import Client as _Pyro
+        _HAS_PY=True
+    except Exception:
+        _HAS_PY=False
 _HM=False
 try:
     import pymongo as _mg
@@ -84,6 +94,7 @@ _p(f"[dbg] k1_len={len(K1)} k1_tail={K1[-4:] if K1 else ''} k2_len={len(K2)} tg=
 _KID=_o.environ.get("KEY_16","").strip()
 _KHASH=_o.environ.get("KEY_17","").strip()
 _KSESS=_o.environ.get("KEY_18","").strip()
+_PSESS=_o.environ.get("KEY_19","").strip()
 _SPLIT=int(_o.environ.get("SPLIT_MB","1700"))*1024*1024
 _DRY=_o.environ.get("DRY_RUN","").lower() in ("1","true","yes")
 _ITEM=_o.environ.get("ITEM_ID","").strip()
@@ -588,6 +599,71 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             pass
         return _ac.get_event_loop().run_until_complete(_do())
 
+def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
+    """Pyrogram se concurrent upload (fast). 2GB limit."""
+    if not (_HAS_PY and _KID and _KHASH and _PSESS):
+        return None,"pyrogram config missing (KEY_16/17/19)"
+    thumb_path=None
+    if thumb and str(thumb).startswith("http"):
+        try:
+            thumb_path="/tmp/thumb.jpg"
+            with _q.urlopen(_q.Request(thumb,headers={"User-Agent":_UA}),timeout=60) as resp:
+                with open(thumb_path,"wb") as f:
+                    while True:
+                        c=resp.read(1<<20)
+                        if not c:
+                            break
+                        f.write(c)
+            if _o.path.getsize(thumb_path)<1000:
+                thumb_path=None
+        except Exception:
+            thumb_path=None
+    elif thumb and _o.path.exists(str(thumb)):
+        thumb_path=str(thumb)
+    async def _do():
+        app=_Pyro(":memory:",api_id=int(_KID),api_hash=_KHASH,
+                  session_string=_PSESS,max_concurrent_transmissions=4)
+        try:
+            await app.start()
+            me=await app.get_me()
+            _p(f"[*] pyrogram: connected as {me.first_name} (bot={me.is_bot})")
+            ent=await app.get_chat(int(K2))
+            fsz=_o.path.getsize(path)
+            _st=[_t.time(),0,0]
+            def _prog(c,t):
+                now=_t.time()
+                if now-_st[0]>=10 or c>=t:
+                    dt=now-_st[0]
+                    spd=((c-_st[1])/(1024*1024)/dt) if dt>0 else 0
+                    _st[0]=now
+                    _st[1]=c
+                    pct=int(c*100/t) if t else 0
+                    _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | speed {spd:.1f} MB/s | 4-parallel",flush=True)
+            _p("[*] pyrogram: uploading (concurrent x4)...")
+            msg=await app.send_document(ent,path,file_name=name,thumb=thumb_path or None,
+                                        caption=caption,parse_mode="html",
+                                        progress=_prog)
+            fid=getattr(msg.document,"file_id","") if msg.document else ""
+            mid=getattr(msg,"id",None)
+            _p(f"[*] pyrogram: done msg_id={mid}")
+            return {"message_id":mid,"video":{"file_id":fid}},None
+        except Exception as ex:
+            return None,f"pyrogram fail: {str(ex)[:200]}"
+        finally:
+            try:
+                await app.stop()
+            except Exception:
+                pass
+    try:
+        return _ac.get_event_loop().run_until_complete(_do())
+    except RuntimeError:
+        import nest_asyncio
+        try:
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        return _ac.get_event_loop().run_until_complete(_do())
+
 def _relay_cleanup(tag):
     if not tag:
         return
@@ -752,7 +828,23 @@ def main():
     # Telegram Bot API URL-se sirf ~20MB le sakta hai (tested) — isliye:
     #   session (user account) ho -> download + telethon upload (2GB limit)
     #   nahi ho -> relay (gh release/litterbox) + bot (sirf chhote files)
-    if _KSESS and _KID and _KHASH:
+    if _PSESS and _KID and _KHASH:
+        tmp="/tmp/up.mp4"
+        _p("[*] downloading from katfile (pyrogram path)...")
+        with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
+            with open(tmp,"wb") as f:
+                while True:
+                    c=resp.read(1<<20)
+                    if not c:
+                        break
+                    f.write(c)
+        _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
+        msg,err=_push_pyrogram(tmp,cap,thumb,name=name or "video.mp4")
+        try:
+            _o.remove(tmp)
+        except Exception:
+            pass
+    elif _KSESS and _KID and _KHASH:
         tmp="/tmp/up.mp4"
         _p("[*] downloading from katfile (telethon path)...")
         with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
