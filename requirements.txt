@@ -2,3 +2,5 @@ pycryptodome
 requests
 pymongo[srv]
 telethon
+pyrogram
+TgCrypto
