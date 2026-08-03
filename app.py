@@ -1,3 +1,4 @@
+import asyncio as _ac
 import base64 as _b
 import functools as _f
 import hashlib as _h
@@ -549,14 +550,14 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             except Exception:
                 pass
     try:
-        return asyncio.get_event_loop().run_until_complete(_do())
+        return _ac.get_event_loop().run_until_complete(_do())
     except RuntimeError:
         import nest_asyncio
         try:
             nest_asyncio.apply()
         except Exception:
             pass
-        return asyncio.get_event_loop().run_until_complete(_do())
+        return _ac.get_event_loop().run_until_complete(_do())
 
 def _relay_cleanup(tag):
     if not tag:
