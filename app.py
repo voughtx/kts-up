@@ -95,6 +95,7 @@ _KID=_o.environ.get("KEY_16","").strip()
 _KHASH=_o.environ.get("KEY_17","").strip()
 _KSESS=_o.environ.get("KEY_18","").strip()
 _PSESS=_o.environ.get("KEY_19","").strip()
+_NOFB=_o.environ.get("NO_FALLBACK","").lower() in ("1","true","yes")
 _SPLIT=int(_o.environ.get("SPLIT_MB","1700"))*1024*1024
 _DRY=_o.environ.get("DRY_RUN","").lower() in ("1","true","yes")
 _ITEM=_o.environ.get("ITEM_ID","").strip()
@@ -627,7 +628,20 @@ def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
             await app.start()
             me=await app.get_me()
             _p(f"[*] pyrogram: connected as {me.first_name} (bot={me.is_bot})")
-            ent=await app.get_chat(int(K2))
+            # peer resolve: direct id -> dialogs search fallback
+            ent_id=None
+            try:
+                ent=await app.get_chat(int(K2))
+                ent_id=ent.id
+            except Exception:
+                _p("[!] get_chat fail — dialogs me dhund raha hoon...")
+                async for d in app.get_dialogs():
+                    if str(d.chat.id)==str(int(K2)):
+                        ent_id=d.chat.id
+                        break
+            if not ent_id:
+                return None,"peer id invalid (account channel ka member/admin nahi?)"
+            _p(f"[*] pyrogram: target resolved (id={ent_id})")
             fsz=_o.path.getsize(path)
             _st=[_t.time(),0,0]
             def _prog(c,t):
@@ -640,7 +654,7 @@ def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
                     pct=int(c*100/t) if t else 0
                     _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | speed {spd:.1f} MB/s | 4-parallel",flush=True)
             _p("[*] pyrogram: uploading (concurrent x4)...")
-            msg=await app.send_document(ent,path,file_name=name,thumb=thumb_path or None,
+            msg=await app.send_document(ent_id,path,file_name=name,thumb=thumb_path or None,
                                         caption=caption,parse_mode="html",
                                         progress=_prog)
             fid=getattr(msg.document,"file_id","") if msg.document else ""
@@ -840,6 +854,11 @@ def main():
                     f.write(c)
         _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
         msg,err=_push_pyrogram(tmp,cap,thumb,name=name or "video.mp4")
+        if not msg and _KSESS and not _NOFB:
+            _p(f"[!] pyrogram fail ({err}) — telethon fallback...")
+            msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
+        elif not msg and _NOFB:
+            _p(f"[!] pyrogram fail ({err}) — NO_FALLBACK on, telethon skip")
         try:
             _o.remove(tmp)
         except Exception:
