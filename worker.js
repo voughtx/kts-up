@@ -1,8 +1,3 @@
-/**
- * Edge URL server. Serves stored media by id and provides
- * a merged playlist endpoint. No public docs.
- */
-
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
