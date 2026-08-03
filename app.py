@@ -48,6 +48,7 @@ _TT=_o.environ.get("KEY_12","")
 _TG=_o.environ.get("KEY_13","")
 _REF=_o.environ.get("KEY_14","")
 _WEB=_o.environ.get("KEY_15","")
+_p(f"[dbg] k1_len={len(K1)} k2_len={len(K2)} tg={_TG!r} ref={_REF!r} web={_WEB!r}")
 _SPLIT=int(_o.environ.get("SPLIT_MB","1700"))*1024*1024
 _DRY=_o.environ.get("DRY_RUN","").lower() in ("1","true","yes")
 _ITEM=_o.environ.get("ITEM_ID","").strip()
@@ -427,15 +428,39 @@ def _make_item_link(eid,title,se_tag):
     fname=f"{title}{se_tag} {q_label}"
     link,name,size=_mk_link(target["url"],title,q_label,filename=fname)
     return link,name,size,q_label
-def _push(url,caption,thumb=None):
+def _push(url,caption,thumb=None,fname=None):
+    tmp=None
+    if str(url).startswith("http"):
+        tmp="/tmp/push.mp4"
+        _p("[*] fetching media...")
+        with _q.urlopen(_q.Request(url,headers={"User-Agent":_UA}),timeout=1800) as resp:
+            done=0
+            with open(tmp,"wb") as f:
+                while True:
+                    c=resp.read(1<<20)
+                    if not c:
+                        break
+                    f.write(c)
+                    done+=len(c)
+        _p(f"   {done/(1024*1024):.0f} MB")
+        fname=fname or "video.mp4"
+    else:
+        tmp=str(url)
+        fname=fname or _o.path.basename(tmp)
     api=f"{_TG}/{K1}/sendVideo"
-    payload={"chat_id":K2,"video":url,"caption":caption,"parse_mode":"HTML","supports_streaming":True}
-    if thumb:
-        payload["thumbnail"]=thumb
-    r=_req.post(api,data=payload,timeout=900)
+    with open(tmp,"rb") as f:
+        data={"chat_id":K2,"caption":caption,"parse_mode":"HTML","supports_streaming":"true"}
+        if thumb:
+            data["thumbnail"]=thumb
+        r=_req.post(api,data=data,files={"video":(fname,f,"video/mp4")},timeout=1800)
+    if tmp.startswith("/tmp/"):
+        try:
+            _o.remove(tmp)
+        except Exception:
+            pass
     j=r.json()
     if not j.get("ok"):
-        return None,j.get("description","error")
+        return None,f"{j.get('error_code')} {j.get('description','error')}"
     msg=j["result"]
     fid=""
     if msg.get("video"):
@@ -469,24 +494,27 @@ def _caption(meta,q,target,web):
 def _split_send(link,base,cap,thumb):
     tmp="/tmp/big.mp4"
     _p("\n[*] large item — download + split...")
-    r=_req.get(link,stream=True,timeout=1800)
-    with open(tmp,"wb") as f:
-        for chunk in r.iter_content(1<<20):
-            f.write(chunk)
+    with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
+        with open(tmp,"wb") as f:
+            while True:
+                c=resp.read(1<<20)
+                if not c:
+                    break
+                f.write(c)
     _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
-    tag="rel-"+str(int(_t.time()))
-    _s.run(["gh","release","create",tag,"--repo",_o.environ.get("GITHUB_REPOSITORY",""),"--title",tag,"--notes","temp"],check=False,capture_output=True)
     outd="/tmp/parts"
     _o.makedirs(outd,exist_ok=True)
+    for x in _o.listdir(outd):
+        try:
+            _o.remove(outd+"/"+x)
+        except Exception:
+            pass
     _s.run(["ffmpeg","-y","-i",tmp,"-c","copy","-map","0","-f","segment","-segment_time","1800","-reset_timestamps","1",f"{outd}/part_%03d.mp4"],check=False,capture_output=True)
     parts=sorted(_o.listdir(outd))
     _p(f"   {len(parts)} parts")
     results=[]
     for i,p in enumerate(parts,1):
-        asset=f"{base}.{i:03d}"
-        _s.run(["gh","release","upload",tag,f"{outd}/{p}","--repo",_o.environ.get("GITHUB_REPOSITORY",""),"--clobber",f"--name={asset}"],check=False,capture_output=True)
-        u=f"https://github.com/{_o.environ.get('GITHUB_REPOSITORY','')}/releases/download/{tag}/{asset}"
-        msg,err=_push(u,f"{cap}\n\U0001F9F9 Part {i}/{len(parts)}",thumb)
+        msg,err=_push(f"{outd}/{p}",f"{cap}\n\U0001F9F9 Part {i}/{len(parts)}",thumb,fname=f"{base}.{i:03d}.mp4")
         if msg:
             fid=""
             if msg.get("video"):
@@ -495,7 +523,6 @@ def _split_send(link,base,cap,thumb):
             _p(f"   part {i} ok")
         else:
             _p(f"   part {i} FAIL: {err}")
-    _s.run(["gh","release","delete",tag,"--yes","--repo",_o.environ.get("GITHUB_REPOSITORY","")],check=False,capture_output=True)
     _o.remove(tmp)
     return results
 def main():
@@ -547,7 +574,7 @@ def main():
         _p("\n[ok] done (split). saved.")
         return
     _p("[*] pushing...")
-    msg,err=_push(link,cap,thumb)
+    msg,err=_push(link,cap,thumb,fname=name or "video.mp4")
     if not msg:
         _p(f"[x] push fail: {err}")
         _del_job(job)
