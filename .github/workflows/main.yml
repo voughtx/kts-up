@@ -60,6 +60,7 @@ jobs:
           KEY_16: ${{ secrets.KEY_16 }}
           KEY_17: ${{ secrets.KEY_17 }}
           KEY_18: ${{ secrets.KEY_18 }}
+          KEY_19: ${{ secrets.KEY_19 }}
           ITEM_ID: ${{ inputs.item_id }}
           QUALITY: ${{ inputs.quality }}
           TARGET: ${{ inputs.target }}
