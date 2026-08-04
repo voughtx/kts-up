@@ -444,7 +444,8 @@ def _relay_episode(ep_id):
             _p(f"[*] relay: downloaded {fsz/(1024*1024):.0f} MB")
             # split parts hain? (episode me parts saved the to mid list me)
             # upload — GitHub Release (2GB) prefer, litterbox (<1GB) fallback
-            fname=(rec.get("title") or "video")[:60]+".mp4"
+            # asli file ka naam use karo (Telegram se download hua) — link match hoga
+            fname=_o.path.basename(path) or ((rec.get("title") or "video")[:60]+".mp4")
             fname=_r.sub(r'[^A-Za-z0-9._-]+',"_",fname) or "video.mp4"
             repo=_o.environ.get("GITHUB_REPOSITORY","")
             link=None
@@ -453,13 +454,9 @@ def _relay_episode(ep_id):
                 r1=_s.run(["gh","release","create",tag,"--repo",repo,"--title",tag,"--notes","temp"],capture_output=True,text=True)
                 if r1.returncode!=0:
                     _p(f"[!] gh create fail: {r1.stderr.strip()[:200]}")
-                r2=_s.run(["gh","release","upload",tag,f"{path}#{fname}","--repo",repo,"--clobber"],capture_output=True,text=True)
+                r2=_s.run(["gh","release","upload",tag,path,"--repo",repo,"--clobber"],capture_output=True,text=True)
                 if r2.returncode!=0:
                     _p(f"[!] gh upload fail: {r2.stderr.strip()[:200]}")
-                    # fallback: bina # ke (asli filename hi naam hoga)
-                    r2=_s.run(["gh","release","upload",tag,path,"--repo",repo,"--clobber"],capture_output=True,text=True)
-                    if r2.returncode!=0:
-                        _p(f"[!] gh upload fail2: {r2.stderr.strip()[:200]}")
                 if r1.returncode==0 and r2.returncode==0:
                     link=f"https://github.com/{repo}/releases/download/{tag}/{fname}"
                     _p(f"[*] relay: github release ok")
