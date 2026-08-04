@@ -475,6 +475,8 @@ def _relay_episode(ep_id):
         r=_ac.get_event_loop().run_until_complete(_do())
         if r and r[0]:
             _p("[ok] relay DONE")
+        else:
+            _p(f"[x] relay result: {r}")
     except RuntimeError:
         import nest_asyncio
         try:
@@ -484,6 +486,8 @@ def _relay_episode(ep_id):
         r=_ac.get_event_loop().run_until_complete(_do())
         if r and r[0]:
             _p("[ok] relay DONE")
+        else:
+            _p(f"[x] relay result: {r}")
 
 def _shows(terms):
     """SHOW_SEARCH me ya to naam (search) ya exact show ID (24-char hex) do.
