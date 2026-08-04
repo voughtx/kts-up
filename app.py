@@ -36,6 +36,7 @@ except ImportError:
         _HAS_TT=False
 try:
     from pyrogram import Client as _Pyro
+    from pyrogram.enums import ParseMode as _PM
     _HAS_PY=True
 except ImportError:
     try:
@@ -96,6 +97,7 @@ _KHASH=_o.environ.get("KEY_17","").strip()
 _KSESS=_o.environ.get("KEY_18","").strip()
 _PSESS=_o.environ.get("KEY_19","").strip()
 _NOFB=_o.environ.get("NO_FALLBACK","").lower() in ("1","true","yes")
+_CC=min(int(_o.environ.get("CONCURRENCY","100")),100)
 _SPLIT=int(_o.environ.get("SPLIT_MB","1700"))*1024*1024
 _DRY=_o.environ.get("DRY_RUN","").lower() in ("1","true","yes")
 _ITEM=_o.environ.get("ITEM_ID","").strip()
@@ -623,7 +625,7 @@ def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
         thumb_path=str(thumb)
     async def _do():
         app=_Pyro(":memory:",api_id=int(_KID),api_hash=_KHASH,
-                  session_string=_PSESS,max_concurrent_transmissions=8)
+                  session_string=_PSESS,max_concurrent_transmissions=_CC)
         try:
             await app.start()
             me=await app.get_me()
@@ -652,10 +654,10 @@ def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
                     _st[0]=now
                     _st[1]=c
                     pct=int(c*100/t) if t else 0
-                    _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | speed {spd:.1f} MB/s | 8-parallel",flush=True)
+                    _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | speed {spd:.1f} MB/s | {_CC}-parallel",flush=True)
             _p("[*] pyrogram: uploading (concurrent x4)...")
             msg=await app.send_document(ent_id,path,file_name=name,thumb=thumb_path or None,
-                                        caption=caption,parse_mode="HTML",
+                                        caption=caption,parse_mode=_PM.HTML,
                                         progress=_prog)
             fid=getattr(msg.document,"file_id","") if msg.document else ""
             mid=getattr(msg,"id",None)
