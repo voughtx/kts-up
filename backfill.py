@@ -1,5 +1,3 @@
-# KTS backfill tool — ek episode doc Mongo + Supabase me save karta hai
-# Use: workflow_dispatch (backfill.yml) ke through, DOC_JSON_B64 env me
 import os, json, base64, urllib.request as u
 
 K7 = os.environ.get("KEY_7", "")
