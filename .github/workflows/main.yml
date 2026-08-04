@@ -95,5 +95,7 @@ jobs:
           KEY_20: ${{ secrets.KEY_20 }}
           KEY_21: ${{ secrets.KEY_21 }}
           RUN_ID: ${{ github.run_id }}
+          JOB_ID: ${{ github.job }}
           JOB_STATUS: ${{ job.status }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python save_logs.py || echo "[warn] log save failed (ignored)"
