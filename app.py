@@ -426,10 +426,11 @@ def _relay_episode(ep_id):
             _p(f"[*] relay: target resolved (id={ent_id})")
             _p(f"[*] relay: downloading msg {mid} from TG...")
             msgs=await app.get_messages(ent_id,mid)
-            if not msgs:
+            msg1=msgs[0] if isinstance(msgs,list) and msgs else msgs
+            if not msg1:
                 return None,"no message"
             dpath="/tmp/relay_dl.bin"
-            path=await msgs.download_media(file=dpath)
+            path=await msg1.download_media(file=dpath)
             if not path:
                 return None,"no media"
             fsz=_o.path.getsize(path)
