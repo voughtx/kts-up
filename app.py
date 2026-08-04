@@ -382,9 +382,30 @@ def _sb_save(doc):
     except Exception as ex:
         _p(f"[!] supabase save fail: {str(ex)[:80]}")
 
+def _relay_cleanup_old():
+    """Purane GitHub releases delete (24h+ purane) — repo clean rahega."""
+    try:
+        repo=_o.environ.get("GITHUB_REPOSITORY","")
+        if not repo: return
+        now=int(_t.time()*1000)
+        out=_s.run(["gh","release","list","--repo",repo,"--limit","30"],capture_output=True,text=True)
+        for line in out.stdout.splitlines():
+            tag=line.split("\t")[0].strip() if "\t" in line else line.split()[0].strip()
+            if not tag.startswith("rel-"): continue
+            try:
+                ts=int(tag[4:])
+            except Exception:
+                continue
+            if now-ts > 86400000:  # 24h
+                _s.run(["gh","release","delete",tag,"--yes","--repo",repo],capture_output=True,text=True)
+                _p(f"[*] cleanup: {tag} deleted (24h+ old)")
+    except Exception as ex:
+        _p(f"[!] cleanup fail: {str(ex)[:60]}")
+
 def _relay_episode(ep_id):
     """Dashboard 'Get Link' → TG se download → public link (GitHub Release/litterbox).
     Link + expiry Supabase me save. Split parts merge hokar ek file."""
+    _relay_cleanup_old()
     if not (_PSESS and _KID and _KHASH):
         _p("[x] relay: pyrogram session missing (KEY_19)")
         return
@@ -1410,10 +1431,27 @@ def main():
             _p("[!] bot file_id nahi mila — permanent URL skip")
     except Exception as ex:
         _p(f"[!] bot file_id capture fail: {str(ex)[:80]}")
-    perm=f"{K4}/v/{bot_fid}" if (K4 and bot_fid and (bot_fid.startswith("BQAC") or ":" in bot_fid)) else ""
-    if perm:
+    # /v/ (bot file_id) 20MB limit ki wajah se badi files par fail karta hai —
+    # caption me asli RELAY link (agar ban chuki) dikhao, warna TG link
+    _rlink=""
+    try:
+        if _SBURL and _SBKEY:
+            url2=f"{_SBURL}/rest/v1/links?select=url,expires_at&id=eq.{_u.quote(eid)}&limit=1"
+            req2=_q.Request(url2,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+            with _q.urlopen(req2,timeout=20) as r2:
+                arr=_j.loads(r2.read().decode())
+                if arr and arr[0].get("url") and arr[0].get("expires_at",0)>int(_t.time()):
+                    _rlink=arr[0]["url"]
+    except Exception:
+        pass
+    _link_line=""
+    if _rlink:
+        _link_line=f"\n\U0001F517 <a href=\"{_esc(_rlink)}\">Download</a>"
+    elif _turl(mid) if mid else False:
+        _link_line=f"\n\U0001F517 <a href=\"{_esc(_turl(mid))}\">Channel</a>"
+    if _link_line:
         try:
-            _q.urlopen(_q.Request(f"{_TBASE}{K1}/editMessageCaption",data=_u.urlencode({"chat_id":K2,"message_id":mid,"caption":cap+f"\n\U0001F4BE Permanent: {perm}","parse_mode":"HTML"}).encode(),method="POST"),timeout=60)
+            _q.urlopen(_q.Request(f"{_TBASE}{K1}/editMessageCaption",data=_u.urlencode({"chat_id":K2,"message_id":mid,"caption":cap+_link_line,"parse_mode":"HTML"}).encode(),method="POST"),timeout=60)
         except Exception:
             pass
     _doc={"id":eid,"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
