@@ -1,3 +1,6 @@
+# KTS backfill tool — ek doc Mongo + Supabase me save karta hai
+# Use: workflow_dispatch (backfill.yml) ke through, DOC_JSON_B64 env me
+# doc mein "_progress": true ho to Supabase progress table (id, state) mein save hota hai
 import os, json, base64, urllib.request as u
 
 K7 = os.environ.get("KEY_7", "")
@@ -9,7 +12,22 @@ if not raw:
     print("[!] DOC_JSON_B64 missing")
     raise SystemExit(1)
 doc = json.loads(base64.b64decode(raw).decode())
-print("[*] backfill:", doc.get("id"), "|", doc.get("title"))
+print("[*] backfill:", doc.get("id"), "|", doc.get("title") or doc.get("state", {}).get("result", ""))
+
+if doc.get("_progress"):
+    # Supabase progress row
+    if SBURL and SBKEY:
+        try:
+            row = {"id": doc["id"], "state": doc.get("state", {})}
+            req = u.Request(f"{SBURL}/rest/v1/progress", data=json.dumps(row).encode(), method="POST",
+                headers={"apikey": SBKEY, "Authorization": f"Bearer {SBKEY}",
+                         "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"})
+            with u.urlopen(req, timeout=30) as r:
+                print("[ok] supabase progress saved", r.status)
+        except Exception as e:
+            print("[!] supabase progress fail:", str(e)[:100])
+    print("[done]")
+    raise SystemExit(0)
 
 if K7:
     try:
