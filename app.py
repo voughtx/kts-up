@@ -98,6 +98,8 @@ _KSESS=_o.environ.get("KEY_18","").strip()
 _PSESS=_o.environ.get("KEY_19","").strip()
 _SBURL=_o.environ.get("KEY_20","").strip().rstrip("/")
 _SBKEY=_o.environ.get("KEY_21","").strip()
+_RELAY=_o.environ.get("RELAY_MODE","")=="relay-task"
+_RELAYID=_o.environ.get("RELAY_ID","").strip()
 _NOFB=_o.environ.get("NO_FALLBACK","").lower() in ("1","true","yes")
 _MODE=_o.environ.get("MODE","ordered").strip().lower() or "ordered"
 _LANGM=_o.environ.get("LANG_MODE","hindi_only").strip().lower() or "hindi_only"
@@ -379,6 +381,109 @@ def _sb_save(doc):
             _p(f"[ok] supabase save ({r.status})")
     except Exception as ex:
         _p(f"[!] supabase save fail: {str(ex)[:80]}")
+
+def _relay_episode(ep_id):
+    """Dashboard 'Get Link' → TG se download → public link (GitHub Release/litterbox).
+    Link + expiry Supabase me save. Split parts merge hokar ek file."""
+    if not (_PSESS and _KID and _KHASH):
+        _p("[x] relay: pyrogram session missing (KEY_19)")
+        return
+    # Supabase se episode metadata (mid, bot_fid, title, size)
+    rec=None
+    try:
+        if _SBURL and _SBKEY:
+            url=f"{_SBURL}/rest/v1/episodes?select=*&id=eq.{_u.quote(ep_id)}&limit=1"
+            req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+            with _q.urlopen(req,timeout=30) as r:
+                arr=_j.loads(r.read().decode())
+                rec=arr[0] if arr else None
+    except Exception as ex:
+        _p(f"[!] relay: sb fetch fail {str(ex)[:60]}")
+    if not rec:
+        _p("[x] relay: episode Supabase me nahi mila — pehle upload karo")
+        return
+    mid=rec.get("mid")
+    if not mid:
+        _p("[x] relay: mid missing")
+        return
+    async def _do():
+        app=_Pyro(":memory:",api_id=int(_KID),api_hash=_KHASH,
+                  session_string=_PSESS,max_concurrent_transmissions=_CC)
+        try:
+            await app.start()
+            ent=await app.get_chat(int(K2))
+            _p(f"[*] relay: downloading msg {mid} from TG...")
+            msgs=await app.get_messages(ent,mid)
+            if not msgs:
+                return None,"no message"
+            dpath="/tmp/relay_dl.bin"
+            path=await msgs.download_media(file=dpath)
+            if not path:
+                return None,"no media"
+            fsz=_o.path.getsize(path)
+            _p(f"[*] relay: downloaded {fsz/(1024*1024):.0f} MB")
+            # split parts hain? (episode me parts saved the to mid list me)
+            # upload — GitHub Release (2GB) prefer, litterbox (<1GB) fallback
+            fname=(rec.get("title") or "video")[:60]+".mp4"
+            fname=_r.sub(r'[^A-Za-z0-9._-]+',"_",fname) or "video.mp4"
+            repo=_o.environ.get("GITHUB_REPOSITORY","")
+            link=None
+            if repo:
+                tag="rel-"+str(int(_t.time()*1000))
+                r1=_s.run(["gh","release","create",tag,"--repo",repo,"--title",tag,"--notes","temp"],capture_output=True,text=True)
+                r2=_s.run(["gh","release","upload",tag,path,"--repo",repo,"--clobber","--name="+fname],capture_output=True,text=True)
+                if r1.returncode==0 and r2.returncode==0:
+                    link=f"https://github.com/{repo}/releases/download/{tag}/{fname}"
+                    _p(f"[*] relay: github release ok")
+            if not link:
+                resp=_s.run(["curl","-s","--max-time","900","-F","reqtype=fileupload","-F","time=24h","-F",f"fileToUpload=@{path}","https://litterbox.catbox.moe/resources/internals/api.php"],capture_output=True,text=True,timeout=950)
+                lb=resp.stdout.strip()
+                if lb.startswith("http"):
+                    link=lb
+                    _p(f"[*] relay: litterbox ok")
+            try:
+                _o.remove(path)
+            except Exception:
+                pass
+            if not link:
+                return None,"upload fail"
+            expires=int(_t.time())+86400  # 24h
+            # save link to Supabase links table
+            try:
+                if _SBURL and _SBKEY:
+                    row={"id":ep_id,"url":link,"expires_at":expires,"created_at":int(_t.time())}
+                    url2=f"{_SBURL}/rest/v1/links"
+                    req=_q.Request(url2,data=_j.dumps(row).encode(),method="POST",
+                                   headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                            "Content-Type":"application/json",
+                                            "Prefer":"resolution=merge-duplicates"})
+                    with _q.urlopen(req,timeout=30) as r:
+                        _p(f"[ok] relay link saved ({r.status})")
+            except Exception as ex:
+                _p(f"[!] relay link save fail: {str(ex)[:60]}")
+            _p(f"[*] RELAY LINK: {link}")
+            _p(f"[*] expires: {expires}")
+            return link,None
+        except Exception as ex:
+            return None,f"relay fail: {str(ex)[:200]}"
+        finally:
+            try:
+                await app.stop()
+            except Exception:
+                pass
+    try:
+        r=_ac.get_event_loop().run_until_complete(_do())
+        if r and r[0]:
+            _p("[ok] relay DONE")
+    except RuntimeError:
+        import nest_asyncio
+        try:
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        r=_ac.get_event_loop().run_until_complete(_do())
+        if r and r[0]:
+            _p("[ok] relay DONE")
 
 def _shows(terms):
     """SHOW_SEARCH me ya to naam (search) ya exact show ID (24-char hex) do.
@@ -1041,6 +1146,12 @@ def _split_send(link,base,cap,thumb):
     _o.remove(tmp)
     return results
 def main():
+    if _RELAY:
+        if not _RELAYID:
+            _p("[x] relay: RELAY_ID missing")
+            _y.exit(1)
+        _relay_episode(_RELAYID)
+        _y.exit(0)
     if not K1 or not K2:
         _p("missing KEY_1/KEY_2")
         _y.exit(1)
