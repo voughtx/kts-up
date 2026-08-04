@@ -33,7 +33,7 @@ on:
         required: false
         default: "hindi_only"
   repository_dispatch:
-    types: [run-task]
+    types: [run-task, relay-task]
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -84,5 +84,7 @@ jobs:
           MODE: ${{ inputs.mode }}
           LANG_MODE: ${{ inputs.lang_mode }}
           PRIORITY: ${{ secrets.PRIORITY }}
+          RELAY_ID: ${{ github.event.client_payload.id }}
+          RELAY_MODE: ${{ github.event.event_type }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python app.py
