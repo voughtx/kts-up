@@ -97,6 +97,9 @@ _KHASH=_o.environ.get("KEY_17","").strip()
 _KSESS=_o.environ.get("KEY_18","").strip()
 _PSESS=_o.environ.get("KEY_19","").strip()
 _NOFB=_o.environ.get("NO_FALLBACK","").lower() in ("1","true","yes")
+_MODE=_o.environ.get("MODE","ordered").strip().lower() or "ordered"
+_LANGM=_o.environ.get("LANG_MODE","hindi_only").strip().lower() or "hindi_only"
+_PRIO=[x.strip() for x in _o.environ.get("PRIORITY","").split(",") if x.strip()]
 _CC=100
 try:
     _ccs=_o.environ.get("CONCURRENCY","").strip()
@@ -407,6 +410,27 @@ def _clean_title(title):
             t=t[len(pat):].strip()
             break
     return t
+def _franchise(title):
+    """Show/movie title se franchise name nikalta hai (pehla word, clean)."""
+    t=_clean_title(title or "").lower()
+    w=t.split()[0] if t.split() else t
+    w=_r.sub(r"[^a-z0-9]", "", w)
+    return w or "unknown"
+
+def _movies_for(franchise):
+    """Franchise naam se movies dhundta hai (release year asc = old first)."""
+    j=_json(f"/movies?search={franchise}&limit=50")
+    if not j:
+        return []
+    ms=[m for m in (j.get("data") or []) if m.get("_id")]
+    def _yr(m):
+        try:
+            return int(m.get("releaseYear") or 0)
+        except Exception:
+            return 0
+    ms.sort(key=_yr)
+    return ms
+
 def _meta(eid):
     j=_json(f"/shows/episode/{eid}")
     if not j:
@@ -441,23 +465,39 @@ def _meta(eid):
     return {"title":d.get("title") or "","image":d.get("image") or "","season":snum,
             "episode":d.get("episodeNumber") or d.get("episode_number"),
             "show_title":_clean_title(stitle),"duration":dur,
-            "category":category,"type":mtype,"lang":_detect_lang(stitle)}
+            "category":category,"type":mtype,"lang":_detect_lang(stitle),
+            "franchise":_franchise(stitle)}
+def _lang_ok(meta):
+    """Language filter: hindi_only me non-Hindi ignore."""
+    if _LANGM=="all":
+        return True
+    return (meta.get("lang") or "Hindi")=="Hindi"
+
 def _pick(shows,done):
-    """Agli episode pick karo. Show tabhi skip hoga jab uske SAARE (non-S0)
-    episodes uploaded ho jayenge — pehle show poora, phir agli show."""
+    """Agli item pick karo — modes: ordered/random/popular.
+    Ek show complete tabhi hota hai jab uske saare episodes uploaded hain.
+    Language filter bhi lagta hai (hindi_only/all)."""
     if _ITEM:
         m=_meta(_ITEM)
         return {"id":_ITEM,"meta":m,"ovr":True}
+    # mode se order decide
     idx=_store.state.get("i0",0)
-    for off in range(len(shows)):
-        si=(idx+off)%len(shows)
+    order=list(range(len(shows)))
+    if _MODE=="random":
+        import random as _rd
+        _rd.shuffle(order)
+    elif _MODE=="popular":
+        order=sorted(order,key=lambda i:-(shows[i].get("rating") or 0))
+    else:
+        order=list(range(idx,len(shows)))+list(range(0,idx))
+    for off in range(len(order)):
+        si=order[off]
         show=shows[si]
         seasons=_seasons(show["_id"])
         if not _S0:
             seasons=[s for s in seasons if (s.get("seasonNumber") or 0)!=0]
         if not seasons:
             continue
-        # pehle check: kya is show ke saare episodes ho gaye?
         all_done=True
         first_pick=None
         for so in range(len(seasons)):
@@ -474,25 +514,55 @@ def _pick(shows,done):
                     m=_meta(ep["_id"])
                     if not m.get("title"):
                         m["title"]=ep.get("title") or "Episode"
+                    if not _lang_ok(m):
+                        continue  # language filter — ise skip (par show complete nahi)
                     first_pick={"id":ep["_id"],"show":show,"season":season,"ep":ep,
                                 "meta":m,"ovr":False,"seasons":seasons,"si":so,"ei":eo,"eps":eps}
         if all_done:
-            continue  # ye show complete — agli show
+            continue
         if first_pick:
-            # state update: isi jagah se continue hoga
             _store.state["i0"]=si
             _store.state["i1"]=first_pick["si"]
             _store.state["i2"]=first_pick["ei"]+1
             _store._save()
             return first_pick
+    # ---- Movies fallback: kisi bhi show ke episodes pending nahi →
+    #      franchise ki movies jo abhi tak upload nahi hui, old-first
+    md=set(_store.state.get("md",[]))
+    for si in range(len(shows)):
+        show=shows[si]
+        fr=_franchise(show.get("title") or "")
+        for mv in _movies_for(fr):
+            if mv["_id"] in done or mv["_id"] in md:
+                continue
+            if not _lang_ok({"lang":_detect_lang(mv.get("title") or "")}):
+                continue
+            mm={"title":mv.get("title") or "","image":mv.get("image") or "",
+                "season":None,"episode":None,"show_title":_clean_title(mv.get("title") or ""),
+                "duration":int(mv.get("durationMinutes") or mv.get("durationSeconds") or 0)//60 if (mv.get("durationMinutes") or 0)==0 else int(mv.get("durationMinutes") or 0),
+                "category":mv.get("category") or "","type":mv.get("type") or "movie",
+                "lang":_detect_lang(mv.get("title") or ""),"franchise":fr}
+            _store.state["i0"]=si
+            _store._save()
+            return {"id":"movie:"+mv["_id"],"meta":mm,"ovr":False,
+                    "seasons":[],"si":0,"ei":0,"eps":[]}
     return None
 def _advance(pick):
     if pick.get("ovr"):
         return
-    # _pick hi self-heal karta hai (uploaded ids source of truth) — yahan bas save
+    # movie ho to md (movies-done) me add
+    if str(pick.get("id","")).startswith("movie:"):
+        midx=pick["id"][6:]
+        md=list(_store.state.get("md",[]))
+        if midx not in md:
+            md.append(midx)
+            _store.state["md"]=md
     _store._save()
 def _make_item_link(eid,title,se_tag):
-    content=f"episode:{eid}"
+    """Movie/episode link banao. Return: (link,name,size,q_label,qualities)"""
+    is_movie=eid.startswith("movie:")
+    eid2=eid[6:] if is_movie else eid
+    content=f"movie:{eid2}" if is_movie else f"episode:{eid2}"
     ch=_challenge(content)
     ph={}
     if ch and ch.get("nonce"):
@@ -500,10 +570,11 @@ def _make_item_link(eid,title,se_tag):
         ph={"X-Pow-Nonce":ch["nonce"],"X-Pow-Solution":sol}
     hdrs={"X-Challenge-Token":K3,"X-Challenge-Retry":"true"}
     hdrs.update(ph)
-    st,body=_req_api(f"/shows/episode/{eid}/links",headers=hdrs)
+    path=f"/movies/{eid2}/links" if is_movie else f"/shows/episode/{eid2}/links"
+    st,body=_req_api(path,headers=hdrs)
     if st!=200:
         _p(f"[x] links HTTP {st}")
-        return None,None,0,""
+        return None,None,0,"",[]
     data=_j.loads(body).get("data") or {}
     variants=[]
     for ln in (data.get("links") or []):
@@ -518,8 +589,10 @@ def _make_item_link(eid,title,se_tag):
         variants+=_parse_master(body2,url)
     if not variants:
         _p("[x] no variants")
-        return None,None,0,""
+        return None,None,0,"",[]
     variants.sort(key=lambda v:_rval(v["resolution"]),reverse=True)
+    qualities=sorted({_rlab(v["resolution"]) for v in variants},
+                     key=lambda x:-(int(_r.sub(r"\D","",x) or 0)))
     if _QUAL and _QUAL!="best":
         want=int(_r.sub(r"\D","",_QUAL) or 0)
         if want:
@@ -531,7 +604,7 @@ def _make_item_link(eid,title,se_tag):
     q_label=_rlab(target["resolution"])
     fname=f"{title}{se_tag} {q_label}"
     link,name,size=_mk_link(target["url"],title,q_label,filename=fname)
-    return link,name,size,q_label
+    return link,name,size,q_label,qualities
 def _relay(url_or_path,name=None):
     """katfile/local file ko public URL par relay karo jo Telegram fetch kar sake.
     Priority: GitHub Release (filename preserve) -> litterbox (verified).
@@ -735,6 +808,91 @@ def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
             pass
         return _ac.get_event_loop().run_until_complete(_do())
 
+def _split_media_group(link,base,cap,thumb,name="video.mp4"):
+    """Badi file (>1.7GB) ko split karke media-group me upload karo.
+    ≤10 parts ek block; >10 do blocks; caption sirf last part par.
+    Returns: list of {part, fid, mid} ya []"""
+    if not (_HAS_PY and _KID and _KHASH and _PSESS):
+        return []
+    tmp="/tmp/big.mp4"
+    _p("\n[*] split: large file — downloading...")
+    with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
+        with open(tmp,"wb") as f:
+            while True:
+                c=resp.read(1<<20)
+                if not c:
+                    break
+                f.write(c)
+    _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
+    outd="/tmp/parts"
+    _o.makedirs(outd,exist_ok=True)
+    for x in _o.listdir(outd):
+        try:
+            _o.remove(outd+"/"+x)
+        except Exception:
+            pass
+    _s.run(["ffmpeg","-y","-i",tmp,"-c","copy","-map","0",
+            "-f","segment","-segment_time","1700","-reset_timestamps","1",
+            f"{outd}/part_%03d.mp4"],check=False,capture_output=True)
+    parts=sorted(_o.listdir(outd))
+    if not parts:
+        _p("[x] split fail — no parts")
+        return []
+    _p(f"   {len(parts)} parts")
+    async def _do():
+        app=_Pyro(":memory:",api_id=int(_KID),api_hash=_KHASH,
+                  session_string=_PSESS,max_concurrent_transmissions=_CC)
+        try:
+            await app.start()
+            me=await app.get_me()
+            _p(f"[*] pyrogram: connected as {me.first_name}")
+            ent=await app.get_chat(int(K2))
+            # saare parts upload karke media group me bhejo
+            results=[]
+            CHUNK=10
+            for ci in range(0,len(parts),CHUNK):
+                chunk=parts[ci:ci+CHUNK]
+                from pyrogram.types import InputMediaDocument
+                media=[]
+                for pi,p in enumerate(chunk):
+                    fpath=f"{outd}/{p}"
+                    fname_p=f"{base}.{ci+pi+1:03d}.mp4"
+                    _p(f"   uploading part {ci+pi+1}/{len(parts)}...")
+                    up=await app.upload_document(fpath,file_name=fname_p)
+                    is_last=(ci+pi+1==len(parts))
+                    media.append(InputMediaDocument(up,caption=caption if is_last else None,
+                                                    parse_mode="HTML" if is_last else None))
+                msgs=await app.send_media_group(ent,media)
+                for pi,msg in enumerate(msgs):
+                    fid=""
+                    if msg.document:
+                        fid=msg.document.file_id or ""
+                    results.append({"part":ci+pi+1,"fid":fid,"mid":msg.id})
+                _p(f"   block {ci//CHUNK+1} sent ({len(msgs)} parts)")
+            return results
+        except Exception as ex:
+            _p(f"[x] media group fail: {str(ex)[:200]}")
+            return []
+        finally:
+            try:
+                await app.stop()
+            except Exception:
+                pass
+    try:
+        r=_ac.get_event_loop().run_until_complete(_do())
+    except RuntimeError:
+        import nest_asyncio
+        try:
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        r=_ac.get_event_loop().run_until_complete(_do())
+    try:
+        _o.remove(tmp)
+    except Exception:
+        pass
+    return r
+
 def _relay_cleanup(tag):
     if not tag:
         return
@@ -798,7 +956,7 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     # 🗃️ Category: Show • Anime  (ya Movie • Cartoon)
     tlab="Movie" if (meta.get("type") or "").startswith("movie") else "Show"
     clab=meta.get("category") or ""
-    lines.append(f"\U0001F5C3\uFE0F Category: <b>{_esc(tlab)} \u2022 {_esc(clab)}</b>")
+    lines.append(f"\U0001F5F3\uFE0F Category: <b>{_esc(tlab)} \u2022 {_esc(clab)}</b>")
     lines.append(_SEP)
     tgt=""
     if web:
@@ -882,35 +1040,40 @@ def main():
     se_tag=""
     if meta.get("season") is not None and meta.get("episode") is not None:
         se_tag=f" S{meta['season']}E{meta['episode']}"
-    web=f"{_WEB}episodeId={eid}"
+    is_mv=eid.startswith("movie:")
+    web=f"{_WEB}movieId={eid[6:]}" if is_mv else f"{_WEB}episodeId={eid}"
     _p(f"\n> next: {meta.get('show_title','')} {se_tag.strip()} — {meta.get('title')}")
     _p(f"   id: {eid}")
     if _DRY:
         _p("\n[dry] preview only.")
         return
     _p("[*] building link...")
-    link,name,size,q=_make_item_link(eid,meta.get("title","item"),se_tag)
+    link,name,size,q,quals=_make_item_link(eid,meta.get("title","item"),se_tag)
     if not link:
         _p("[x] link failed (KEY_3 stale?)")
         _y.exit(1)
     job=link.rstrip("/").split("/")[-1]
-    _p(f"   ready | {size/(1024*1024):.0f} MB | {q}")
+    _p(f"   ready | {size/(1024*1024):.0f} MB | {q} | qualities: {quals}")
     thumb=meta.get("image") or None
     cap=_caption(meta,q,_TGT or K5,web,thumb or "",size or 0,meta.get("duration") or 0)
-    if size and size>_SPLIT and not _KSESS:
-        _p(f"[!] {size/(1024*1024):.0f} MB > limit — split")
+    if size and size>_SPLIT:
+        _p(f"[!] {size/(1024*1024):.0f} MB > limit — split (media group)")
         base=(name or "item").replace(".mp4","")
-        results=_split_send(link,base,cap,thumb)
+        results=_split_media_group(link,base,cap,thumb,name=name or "video.mp4")
         if not results:
             _p("[x] split fail")
             _del_job(job)
             _y.exit(1)
-        _store.save_item({"id":eid,"show":meta.get("show_title",""),"season":meta.get("season"),"episode":meta.get("episode"),"title":meta.get("title",""),"quality":q,"parts":results,"web":web,"at":int(_t.time()),"size":size})
+        _store.save_item({"id":eid,"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
+                          "season":meta.get("season"),"episode":meta.get("episode"),
+                          "title":meta.get("title",""),"quality":q,"qualities":quals,
+                          "lang":meta.get("lang",""),"category":meta.get("category",""),
+                          "thumb":thumb or "","parts":results,"web":web,
+                          "at":int(_t.time()),"size":size})
         _del_job(job)
         _p("\n[ok] done (split). saved.")
         return
-    _p("[*] pushing...")
-    # Status message — channel me dikhega kya ho raha hai ('.' ki jagah)
+    # Status message — channel me dikhega kya ho raha hai
     st_msg=""
     try:
         sl=pick.get("seasons") or []
@@ -939,62 +1102,81 @@ def main():
         _p(f"[dbg] status msg fail: HTTP {ex.code}: {ex.read().decode()[:150]}")
     except Exception as ex:
         _p(f"[dbg] status msg fail: {str(ex)[:120]}")
-    # Telegram Bot API URL-se sirf ~20MB le sakta hai (tested) — isliye:
-    #   session (user account) ho -> download + telethon upload (2GB limit)
-    #   nahi ho -> relay (gh release/litterbox) + bot (sirf chhote files)
-    if _PSESS and _KID and _KHASH:
-        tmp="/tmp/up.mp4"
-        _p("[*] downloading from katfile (pyrogram path)...")
-        with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
-            with open(tmp,"wb") as f:
-                while True:
-                    c=resp.read(1<<20)
-                    if not c:
-                        break
-                    f.write(c)
-        _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
-        msg,err=_push_pyrogram(tmp,cap,thumb,name=name or "video.mp4")
-        if not msg and _KSESS and not _NOFB:
-            _p(f"[!] pyrogram fail ({err}) — telethon fallback...")
-            msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
-        elif not msg and _NOFB:
-            _p(f"[!] pyrogram fail ({err}) — NO_FALLBACK on, telethon skip")
-        try:
-            _o.remove(tmp)
-        except Exception:
-            pass
-    elif _KSESS and _KID and _KHASH:
-        tmp="/tmp/up.mp4"
-        _p("[*] downloading from katfile (telethon path)...")
-        with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
-            with open(tmp,"wb") as f:
-                while True:
-                    c=resp.read(1<<20)
-                    if not c:
-                        break
-                    f.write(c)
-        _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
-        msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
-        try:
-            _o.remove(tmp)
-        except Exception:
-            pass
-    else:
-        _p("[!] KEY_18 session nahi hai — bot URL path (sirf <20MB chalega)")
-        rel_url,rel_tag=_relay(link,name or "video.mp4")
-        if not rel_url:
-            _p("[x] relay fail")
+
+    # Retry loop: max 3 attempts, har attempt fresh link
+    _ATT=3
+    for _att in range(1,_ATT+1):
+        if _att>1:
+            _p(f"[!] retry {_att-1}/{_ATT} — fresh link bana raha hoon...")
             _del_job(job)
-            _y.exit(1)
-        msg,err=_push(rel_url,cap,thumb,fname=name or "video.mp4")
-        if not msg and thumb:
-            msg,err=_push(rel_url,cap,None,fname=name or "video.mp4")
-        if rel_tag:
-            _relay_cleanup(rel_tag)
-    if not msg:
-        _p(f"[x] push fail: {err}")
-        _del_job(job)
-        _y.exit(1)
+            _t.sleep(5*_att)
+            link,name,size,q,quals=_make_item_link(eid,meta.get("title","item"),se_tag)
+            if not link:
+                _p("[x] link failed on retry")
+                continue
+            job=link.rstrip("/").split("/")[-1]
+            _p(f"   ready | {size/(1024*1024):.0f} MB | {q}")
+            cap=_caption(meta,q,_TGT or K5,web,thumb or "",size or 0,meta.get("duration") or 0)
+        _p(f"[*] pushing... (attempt {_att})")
+        # download + push (pyrogram -> telethon -> bot fallback)
+        if _PSESS and _KID and _KHASH:
+            tmp="/tmp/up.mp4"
+            _p("[*] downloading from katfile (pyrogram path)...")
+            with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
+                with open(tmp,"wb") as f:
+                    while True:
+                        c=resp.read(1<<20)
+                        if not c:
+                            break
+                        f.write(c)
+            _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
+            msg,err=_push_pyrogram(tmp,cap,thumb,name=name or "video.mp4")
+            if not msg and _KSESS and not _NOFB:
+                _p(f"[!] pyrogram fail ({err}) — telethon fallback...")
+                msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
+            elif not msg and _NOFB:
+                _p(f"[!] pyrogram fail ({err}) — NO_FALLBACK on, telethon skip")
+            try:
+                _o.remove(tmp)
+            except Exception:
+                pass
+        elif _KSESS and _KID and _KHASH:
+            tmp="/tmp/up.mp4"
+            _p("[*] downloading from katfile (telethon path)...")
+            with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
+                with open(tmp,"wb") as f:
+                    while True:
+                        c=resp.read(1<<20)
+                        if not c:
+                            break
+                        f.write(c)
+            _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
+            msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
+            try:
+                _o.remove(tmp)
+            except Exception:
+                pass
+        else:
+            _p("[!] KEY_18 session nahi hai — bot URL path (sirf <20MB chalega)")
+            rel_url,rel_tag=_relay(link,name or "video.mp4")
+            if not rel_url:
+                _p("[x] relay fail")
+                _del_job(job)
+                _y.exit(1)
+            msg,err=_push(rel_url,cap,thumb,fname=name or "video.mp4")
+            if not msg and thumb:
+                msg,err=_push(rel_url,cap,None,fname=name or "video.mp4")
+            if rel_tag:
+                _relay_cleanup(rel_tag)
+        if not msg:
+            _p(f"[x] push fail (attempt {_att}): {err}")
+            _del_job(job)
+            if _att>=_ATT:
+                _y.exit(1)
+            continue
+        break
+
+    
     fid=""
     if msg.get("video"):
         fid=msg["video"].get("file_id","")
@@ -1014,7 +1196,13 @@ def main():
             _q.urlopen(_q.Request(f"{_TBASE}{K1}/editMessageCaption",data=_u.urlencode({"chat_id":K2,"message_id":mid,"caption":cap+f"\n\U0001F4BE Permanent: {perm}","parse_mode":"HTML"}).encode(),method="POST"),timeout=60)
         except Exception:
             pass
-    _store.save_item({"id":eid,"show":meta.get("show_title",""),"season":meta.get("season"),"episode":meta.get("episode"),"title":meta.get("title",""),"quality":q,"fid":fid,"mid":mid,"turl":_turl(mid) if mid else "","perm":perm,"web":web,"size":size,"at":int(_t.time())})
+    _store.save_item({"id":eid,"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
+                      "season":meta.get("season"),"episode":meta.get("episode"),
+                      "title":meta.get("title",""),"quality":q,"qualities":quals,
+                      "lang":meta.get("lang",""),"category":meta.get("category",""),
+                      "thumb":thumb or "","fid":fid,"mid":mid,
+                      "turl":_turl(mid) if mid else "","perm":perm,"web":web,
+                      "size":size,"at":int(_t.time())})
     _del_job(job)
     _p("\n"+"="*50)
     _p(" [ok] DONE")
