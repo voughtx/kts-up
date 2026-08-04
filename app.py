@@ -388,6 +388,25 @@ def _eps(sid,seid):
     eps=[e for e in (j.get("data") or []) if e.get("_id")]
     eps.sort(key=lambda e:e.get("episodeNumber") or 0)
     return eps
+_LANG_PREFIXES={
+    "(english)":"English","(tamil)":"Tamil","(telugu)":"Telugu",
+    "(hindi)":"Hindi","[sub]":"Japanese","(jpn)":"Japanese",
+    "(hungama)":"Hindi","(fandub)":"Hindi","(cam)":"Hindi",
+    "(cn)":"Chinese","(punjabi)":"Punjabi"}
+def _detect_lang(title):
+    t=(title or "").lower()
+    for pat,lang in _LANG_PREFIXES.items():
+        if t.startswith(pat):
+            return lang
+    return "Hindi"
+def _clean_title(title):
+    t=title or ""
+    low=t.lower()
+    for pat in _LANG_PREFIXES:
+        if low.startswith(pat):
+            t=t[len(pat):].strip()
+            break
+    return t
 def _meta(eid):
     j=_json(f"/shows/episode/{eid}")
     if not j:
@@ -406,9 +425,23 @@ def _meta(eid):
         dur=int(dur)
     except Exception:
         dur=0
+    category=d.get("category") or ""
+    mtype=d.get("type") or ("movie" if "/movies/" in eid else "show")
+    # episode/show ke liye category show-detail se lo (episode API me nahi hoti)
+    sid2=d.get("seasonId") or {}
+    shid=None
+    if isinstance(sid2,dict):
+        sh2=sid2.get("showId") or {}
+        if isinstance(sh2,dict):
+            shid=sh2.get("_id")
+    if not category and shid:
+        j2=_json(f"/shows/{shid}")
+        if j2:
+            category=(j2.get("data") or {}).get("category") or ""
     return {"title":d.get("title") or "","image":d.get("image") or "","season":snum,
             "episode":d.get("episodeNumber") or d.get("episode_number"),
-            "show_title":stitle,"duration":dur}
+            "show_title":_clean_title(stitle),"duration":dur,
+            "category":category,"type":mtype,"lang":_detect_lang(stitle)}
 def _pick(shows,done):
     """Agli episode pick karo. Show tabhi skip hoga jab uske SAARE (non-S0)
     episodes uploaded ho jayenge — pehle show poora, phir agli show."""
@@ -741,16 +774,19 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     lines=[]
     if meta.get("title"):
         lines.append(f"\U0001F3AC <b><code>{_esc(meta['title'])}</code></b>")
-    se=[]
+    # 📀 show · Sx-Ey (movie ho to 📀 title)
     if meta.get("show_title"):
+        se=[]
         se.append(_esc(meta["show_title"]))
-    if meta.get("season") is not None and meta.get("episode") is not None:
-        se.append(f"S{meta['season']}-E{meta['episode']}")
-    if se:
-        lines.append("\U0001F4FA <b><code>"+" \u00B7 ".join(se)+"</code></b>")
+        if meta.get("season") is not None and meta.get("episode") is not None:
+            se.append(f"S{meta['season']}-E{meta['episode']}")
+        lines.append("\U0001F4C0 <b><code>"+" \u00B7 ".join(se)+"</code></b>")
+    elif (meta.get("type") or "").startswith("movie"):
+        lines.append(f"\U0001F4C0 <b><code>{_esc(meta.get('title') or '')}</code></b>")
     lines.append(_SEP)
     if q:
         lines.append(f"\u2699\uFE0F Quality: <b>{_esc(q)}</b>")
+    lines.append(f"\U0001F4AC Language: <b>{_esc(meta.get('lang') or 'Hindi')}</b>")
     if size:
         mb=size/(1024*1024)
         if mb>=1024:
@@ -758,7 +794,11 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
         else:
             lines.append(f"\U0001F4C2 Size: <b>{int(round(mb))} MB</b>")
     if duration:
-        lines.append(f"\U0001F4BF Duration: <b>{int(duration)} Min</b>")
+        lines.append(f"\U0001F4FC Duration: <b>{int(duration)} Min</b>")
+    # 🗃️ Category: Show • Anime  (ya Movie • Cartoon)
+    tlab="Movie" if (meta.get("type") or "").startswith("movie") else "Show"
+    clab=meta.get("category") or ""
+    lines.append(f"\U0001F5C3\uFE0F Category: <b>{_esc(tlab)} \u2022 {_esc(clab)}</b>")
     lines.append(_SEP)
     tgt=""
     if web:
@@ -772,7 +812,7 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     elif tgt:
         lines.append(f"\U0001F3AF {tgt}")
     elif thumb_url:
-        lines.append(f"\U0001F5BC\uFE0F <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
+        lines.append(f"\U0001F3AF <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
     return "\n".join(lines)
 def _split_send(link,base,cap,thumb):
     tmp="/tmp/big.mp4"
@@ -870,14 +910,35 @@ def main():
         _p("\n[ok] done (split). saved.")
         return
     _p("[*] pushing...")
-    # chat_id test (diagnostic — 400 ka asli reason)
+    # Status message — channel me dikhega kya ho raha hai ('.' ki jagah)
+    st_msg=""
     try:
-        _q.urlopen(_q.Request(f"{_TBASE}{K1}/sendMessage",data=_u.urlencode({"chat_id":K2,"text":"."}).encode(),method="POST"),timeout=30)
-        _p("[dbg] sendMessage ok")
+        sl=pick.get("seasons") or []
+        el=pick.get("eps") or []
+        csn=sl[pick["si"]].get("seasonNumber") if pick.get("si") is not None and sl else None
+        cen=(pick.get("ep") or {}).get("episodeNumber")
+        l1=f"\U0001F4C0 {meta.get('show_title') or ''}".strip()
+        l2=""
+        if csn is not None:
+            l2+=f"S{csn} - {len(sl)}"
+        if cen is not None:
+            l2+=f" | E{cen} - {len(el)}"
+        st_msg=l1+(f"\n\u21B3 {l2}" if l2 else "")
+        if not st_msg:
+            st_msg="\U0001F4C0 Processing..."
+    except Exception:
+        st_msg=f"\U0001F4C0 {meta.get('show_title') or 'Processing...'}"
+    st_mid=None
+    try:
+        resp=_q.urlopen(_q.Request(f"{_TBASE}{K1}/sendMessage",data=_u.urlencode({"chat_id":K2,"text":st_msg}).encode(),method="POST"),timeout=30)
+        jm=_j.loads(resp.read().decode())
+        if jm.get("ok"):
+            st_mid=jm["result"].get("message_id")
+            _p("[dbg] status message sent")
     except _e.HTTPError as ex:
-        _p(f"[dbg] sendMessage fail: HTTP {ex.code}: {ex.read().decode()[:150]}")
+        _p(f"[dbg] status msg fail: HTTP {ex.code}: {ex.read().decode()[:150]}")
     except Exception as ex:
-        _p(f"[dbg] sendMessage fail: {str(ex)[:120]}")
+        _p(f"[dbg] status msg fail: {str(ex)[:120]}")
     # Telegram Bot API URL-se sirf ~20MB le sakta hai (tested) — isliye:
     #   session (user account) ho -> download + telethon upload (2GB limit)
     #   nahi ho -> relay (gh release/litterbox) + bot (sirf chhote files)
@@ -938,6 +999,13 @@ def main():
     if msg.get("video"):
         fid=msg["video"].get("file_id","")
     mid=msg.get("message_id")
+    if st_mid:
+        try:
+            _q.urlopen(_q.Request(f"{_TBASE}{K1}/editMessageText",
+                data=_u.urlencode({"chat_id":K2,"message_id":st_mid,
+                    "text":st_msg+"\n\u2705 Upload complete"}).encode(),method="POST"),timeout=30)
+        except Exception:
+            pass
     # Bot API file_id (AAM... se shuru) ho tabhi worker permanent URL kaam karega;
     # telethon ka numeric id bot se fetch nahi hota — turl hi kaafi hai
     perm=f"{K4}/v/{fid}" if (K4 and fid and (fid.startswith("AAM") or ":" in fid)) else ""
