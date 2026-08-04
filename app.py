@@ -731,6 +731,19 @@ def _advance(pick):
             md.append(midx)
             _store.state["md"]=md
     _store._save()
+    # progress ko Supabase me bhi save (dashboard /api/progress ke liye)
+    try:
+        if _SBURL and _SBKEY:
+            row={"id":"main","state":_store.state}
+            url2=f"{_SBURL}/rest/v1/progress"
+            req=_q.Request(url2,data=_j.dumps(row).encode(),method="POST",
+                           headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                    "Content-Type":"application/json",
+                                    "Prefer":"resolution=merge-duplicates"})
+            with _q.urlopen(req,timeout=20) as r:
+                _p(f"[ok] progress saved ({r.status})")
+    except Exception as ex:
+        _p(f"[!] progress save fail: {str(ex)[:60]}")
 def _make_item_link(eid,title,se_tag):
     """Movie/episode link banao. Return: (link,name,size,q_label,qualities)"""
     is_movie=eid.startswith("movie:")
