@@ -70,5 +70,6 @@ jobs:
           TARGET: ${{ inputs.target }}
           DRY_RUN: ${{ inputs.dry_run }}
           NO_FALLBACK: ${{ inputs.no_fallback }}
+          CONCURRENCY: ${{ secrets.CONCURRENCY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python app.py
