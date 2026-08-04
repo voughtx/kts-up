@@ -151,6 +151,70 @@ def _k3_fallback():
         return True
     return False
 
+# ===== Health + Pick tracking (Supabase progress rows) =====
+# health -> {result: ok|token_expired|error, at, reason} — worker cron isko dekhta hai
+# pick   -> {eid, stage: link|upload, at} — crash detection ke liye
+def _sb_health(result,reason=""):
+    if not (_SBURL and _SBKEY):
+        return
+    try:
+        row={"id":"health","state":{"result":result,"at":int(_t.time()),"reason":reason[:200]}}
+        url=f"{_SBURL}/rest/v1/progress"
+        req=_q.Request(url,data=_j.dumps(row).encode(),method="POST",
+                       headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                "Content-Type":"application/json",
+                                "Prefer":"resolution=merge-duplicates"})
+        with _q.urlopen(req,timeout=20) as r:
+            pass
+    except Exception:
+        pass
+def _sb_pick(eid,stage="link"):
+    if not (_SBURL and _SBKEY):
+        return
+    try:
+        row={"id":"pick","state":{"eid":eid,"stage":stage,"at":int(_t.time())}}
+        url=f"{_SBURL}/rest/v1/progress"
+        req=_q.Request(url,data=_j.dumps(row).encode(),method="POST",
+                       headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                "Content-Type":"application/json",
+                                "Prefer":"resolution=merge-duplicates"})
+        with _q.urlopen(req,timeout=20) as r:
+            pass
+    except Exception:
+        pass
+def _sb_pick_clear():
+    if not (_SBURL and _SBKEY):
+        return
+    try:
+        row={"id":"pick","state":{"eid":"","stage":"","at":0}}
+        url=f"{_SBURL}/rest/v1/progress"
+        req=_q.Request(url,data=_j.dumps(row).encode(),method="POST",
+                       headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                "Content-Type":"application/json",
+                                "Prefer":"resolution=merge-duplicates"})
+        with _q.urlopen(req,timeout=20) as r:
+            pass
+    except Exception:
+        pass
+def _sb_pick_stale():
+    """Pichhla run upload ke beech crash hua? (pick stage=upload, 15 min+ purana)"""
+    if not (_SBURL and _SBKEY):
+        return None
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.pick&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=15) as r:
+            arr=_j.loads(r.read().decode())
+            st=arr[0].get("state",{}) if arr else {}
+            eid=st.get("eid","")
+            stage=st.get("stage","")
+            at=st.get("at",0)
+            if eid and at and int(_t.time())-at>900 and stage=="upload":
+                return {"eid":eid,"at":at}
+    except Exception:
+        pass
+    return None
+
 _RELAY=_o.environ.get("RELAY_MODE","")=="relay-task"
 _RELAYID=_o.environ.get("RELAY_ID","").strip()
 _NOFB=_o.environ.get("NO_FALLBACK","").lower() in ("1","true","yes")
@@ -410,7 +474,7 @@ class _Store:
             self.state["done"]=lst
             self._save()
 _store=_Store()
-def _sb_save(doc):
+def _sb_save(doc,status="done"):
     """Upload metadata ko Supabase me bhi save (dashboard data)."""
     if not (_SBURL and _SBKEY):
         return
@@ -424,7 +488,7 @@ def _sb_save(doc):
             "thumb":doc.get("thumb",""),"fid":doc.get("fid",""),"bot_fid":doc.get("bot_fid",""),
             "mid":doc.get("mid"),"turl":doc.get("turl",""),"perm":doc.get("perm",""),
             "web":doc.get("web",""),"size":doc.get("size",0),
-            "status":"done","at":int(_t.time())}
+            "status":status,"at":int(_t.time())}
         url=f"{_SBURL}/rest/v1/episodes"
         req=_q.Request(url,data=_j.dumps(row).encode(),method="POST",
                        headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
@@ -839,6 +903,10 @@ def _make_item_link(eid,title,se_tag):
             _p("[*] token switch — retrying...")
             continue
         _p(f"[x] links HTTP {st}")
+        if st in (401,403):
+            _sb_health("token_expired",f"links HTTP {st}")
+        else:
+            _sb_health("error",f"links HTTP {st}")
         return None,None,0,"",[]
     try:
         _sb_save_token()  # jo token kaam kiya usse Supabase me sync (dashboard/latest)
@@ -1301,6 +1369,21 @@ def main():
         _p(f"[dbg] getMe ok={gj.get('ok')} err={gj.get('description','')}")
     except Exception as ex:
         _p(f"[dbg] getMe call fail: {str(ex)[:120]}")
+    # crash detection: pichhla run upload ke beech mara tha?
+    stale=_sb_pick_stale()
+    if stale:
+        _p(f"[!] prev run died mid-upload ({stale['eid']}) — skip + alert")
+        try:
+            _q.urlopen(_q.Request(f"{_TBASE}{K1}/sendMessage",data=_u.urlencode({
+                "chat_id":K2,"text":f"\u26A0\ufe0f Episode {stale['eid']} ka run upload ke beech crash hua tha — channel check karo. System aage badh raha hai."}).encode(),method="POST"),timeout=30)
+        except Exception:
+            pass
+        _dead={"id":stale["eid"],"show":"","franchise":"","season":None,"episode":None,
+               "title":"[died]","quality":"","qualities":[],"lang":"","category":"",
+               "type":"episode","thumb":"","fid":"","bot_fid":"","mid":0,"turl":"",
+               "perm":"","web":"","size":0,"at":int(_t.time())}
+        _store.save_item(_dead)
+        _sb_save(_dead,status="died")
     shows=_shows(K6)
     if not shows:
         _p("no targets")
@@ -1322,15 +1405,18 @@ def main():
     if _DRY:
         _p("\n[dry] preview only.")
         return
+    _sb_pick(eid,"link")
     _p("[*] building link...")
     link,name,size,q,quals=_make_item_link(eid,meta.get("title","item"),se_tag)
     if not link:
+        _sb_pick_clear()
         _p("[x] link failed (KEY_3 stale?)")
         _y.exit(1)
     job=link.rstrip("/").split("/")[-1]
     _p(f"   ready | {size/(1024*1024):.0f} MB | {q} | qualities: {quals}")
     thumb=meta.get("image") or None
     cap=_caption(meta,q,_TGT or K5,web,thumb or "",size or 0,meta.get("duration") or 0)
+    _sb_pick(eid,"upload")
     if size and size>_SPLIT:
         _p(f"[!] {size/(1024*1024):.0f} MB > limit — split (media group)")
         base=(name or "item").replace(".mp4","")
@@ -1346,6 +1432,8 @@ def main():
                           "thumb":thumb or "","parts":results,"web":web,
                           "at":int(_t.time()),"size":size})
         _del_job(job)
+        _sb_pick_clear()
+        _sb_health("ok","split")
         _p("\n[ok] done (split). saved.")
         return
     # Status message — channel me dikhega kya ho raha hai
@@ -1537,9 +1625,17 @@ def main():
     if perm:
         _p(f"   {perm}")
     _p("   saved + cleaned")
+    _sb_pick_clear()
+    _sb_health("ok")
     _advance(pick)
 if __name__=="__main__":
     try:
         main()
     except KeyboardInterrupt:
         _p("\n[stop]")
+    except Exception as _e2:
+        try:
+            _sb_health("error",str(_e2)[:200])
+        except Exception:
+            pass
+        raise
