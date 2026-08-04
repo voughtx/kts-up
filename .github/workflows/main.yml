@@ -87,4 +87,5 @@ jobs:
           RELAY_ID: ${{ github.event.client_payload.id }}
           RELAY_MODE: ${{ github.event.action }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python app.py
