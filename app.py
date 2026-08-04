@@ -754,22 +754,24 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     if size:
         mb=size/(1024*1024)
         if mb>=1024:
-            lines.append(f"\U0001F4C2 Size: <b>{mb/1024:.2f} \u2022 GB</b>")
+            lines.append(f"\U0001F4C2 Size: <b>{int(round(mb/1024))} GB</b>")
         else:
-            lines.append(f"\U0001F4C2 Size: <b>{mb:.2f} \u2022 MB</b>")
+            lines.append(f"\U0001F4C2 Size: <b>{int(round(mb))} MB</b>")
     if duration:
-        secs=int(duration)*60
-        mm=secs//60
-        ss=secs%60
-        lines.append(f"\U0001F4BF Duration: <b>{mm}:{ss:02d} \u2022 Min</b>")
+        lines.append(f"\U0001F4BF Duration: <b>{int(duration)} Min</b>")
     lines.append(_SEP)
+    tgt=""
     if web:
         dom=web.split("//")[-1].split("/")[0]
         lab=dom.split(".")[0].capitalize() if "." in dom else dom
-        lines.append(f"\U0001F3AF Target: <b><a href=\"{_esc(web)}\">{_esc(lab)}</a></b>")
+        tgt=f"<b><a href=\"{_esc(web)}\">{_esc(lab)}</a></b>"
     elif target:
-        lines.append(f"\U0001F3AF Target: <b>{_esc(target)}</b>")
-    if thumb_url:
+        tgt=f"<b>{_esc(target)}</b>"
+    if tgt and thumb_url:
+        lines.append(f"\U0001F3AF {tgt} | <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
+    elif tgt:
+        lines.append(f"\U0001F3AF {tgt}")
+    elif thumb_url:
         lines.append(f"\U0001F5BC\uFE0F <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
     return "\n".join(lines)
 def _split_send(link,base,cap,thumb):
