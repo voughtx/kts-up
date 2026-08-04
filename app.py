@@ -453,9 +453,13 @@ def _relay_episode(ep_id):
                 r1=_s.run(["gh","release","create",tag,"--repo",repo,"--title",tag,"--notes","temp"],capture_output=True,text=True)
                 if r1.returncode!=0:
                     _p(f"[!] gh create fail: {r1.stderr.strip()[:200]}")
-                r2=_s.run(["gh","release","upload",tag,path,"--repo",repo,"--clobber","--name="+fname],capture_output=True,text=True)
+                r2=_s.run(["gh","release","upload",tag,f"{path}#{fname}","--repo",repo,"--clobber"],capture_output=True,text=True)
                 if r2.returncode!=0:
                     _p(f"[!] gh upload fail: {r2.stderr.strip()[:200]}")
+                    # fallback: bina # ke (asli filename hi naam hoga)
+                    r2=_s.run(["gh","release","upload",tag,path,"--repo",repo,"--clobber"],capture_output=True,text=True)
+                    if r2.returncode!=0:
+                        _p(f"[!] gh upload fail2: {r2.stderr.strip()[:200]}")
                 if r1.returncode==0 and r2.returncode==0:
                     link=f"https://github.com/{repo}/releases/download/{tag}/{fname}"
                     _p(f"[*] relay: github release ok")
@@ -466,7 +470,17 @@ def _relay_episode(ep_id):
                     link=lb
                     _p(f"[*] relay: litterbox ok")
                 else:
-                    _p(f"[!] litterbox fail: {lb[:150]}")
+                    _p(f"[!] litterbox fail: {lb[:100]}")
+                    # retry 2x (5s gap)
+                    for _try in range(2):
+                        _t.sleep(5)
+                        resp=_s.run(["curl","-s","--max-time","900","-F","reqtype=fileupload","-F","time=24h","-F",f"fileToUpload=@{path}","https://litterbox.catbox.moe/resources/internals/api.php"],capture_output=True,text=True,timeout=950)
+                        lb=resp.stdout.strip()
+                        if lb.startswith("http"):
+                            link=lb
+                            _p(f"[*] relay: litterbox ok (retry {_try+1})")
+                            break
+                        _p(f"[!] litterbox retry {_try+1} fail: {lb[:80]}")
             try:
                 _o.remove(path)
             except Exception:
