@@ -98,6 +98,59 @@ _KSESS=_o.environ.get("KEY_18","").strip()
 _PSESS=_o.environ.get("KEY_19","").strip()
 _SBURL=_o.environ.get("KEY_20","").strip().rstrip("/")
 _SBKEY=_o.environ.get("KEY_21","").strip()
+
+# ===== KEY_3 (Kartoons token) smart source =====
+# Dashboard /api/token se save kiya token Supabase progress row id=token me hota hai.
+# Order: Supabase (fresh) > env KEY_3. Har successful run me working token wapas save hota hai.
+_K3ENV=K3
+_K3SRC="env"
+def _sb_get_token():
+    if not (_SBURL and _SBKEY):
+        return None
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.token&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=15) as r:
+            arr=_j.loads(r.read().decode())
+            if arr and arr[0].get("state",{}).get("token"):
+                return arr[0]["state"]["token"]
+    except Exception:
+        pass
+    return None
+def _sb_save_token():
+    if not (_SBURL and _SBKEY):
+        return
+    try:
+        row={"id":"token","state":{"token":K3,"at":int(_t.time())}}
+        url=f"{_SBURL}/rest/v1/progress"
+        req=_q.Request(url,data=_j.dumps(row).encode(),method="POST",
+                       headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                "Content-Type":"application/json",
+                                "Prefer":"resolution=merge-duplicates"})
+        with _q.urlopen(req,timeout=20) as r:
+            _p(f"[ok] token synced ({r.status})")
+    except Exception as ex:
+        _p(f"[!] token sync fail: {str(ex)[:50]}")
+try:
+    _tk=_sb_get_token()
+    if _tk:
+        K3=_tk
+        _K3SRC="sb"
+        _p("[ok] kartoons token: supabase")
+except Exception:
+    pass
+if _K3SRC=="env":
+    _p("[ok] kartoons token: env KEY_3")
+def _k3_fallback():
+    """Supabase token fail ho to env wala try karo (ek baar)."""
+    global K3,_K3SRC
+    if _K3SRC=="sb" and _K3ENV:
+        K3=_K3ENV
+        _K3SRC="env"
+        _p("[!] supabase token fail — env KEY_3 try")
+        return True
+    return False
+
 _RELAY=_o.environ.get("RELAY_MODE","")=="relay-task"
 _RELAYID=_o.environ.get("RELAY_ID","").strip()
 _NOFB=_o.environ.get("NO_FALLBACK","").lower() in ("1","true","yes")
@@ -770,18 +823,27 @@ def _make_item_link(eid,title,se_tag):
     is_movie=eid.startswith("movie:")
     eid2=eid[6:] if is_movie else eid
     content=f"movie:{eid2}" if is_movie else f"episode:{eid2}"
-    ch=_challenge(content)
-    ph={}
-    if ch and ch.get("nonce"):
-        sol=_pow(ch["nonce"],ch.get("bits",16))
-        ph={"X-Pow-Nonce":ch["nonce"],"X-Pow-Solution":sol}
-    hdrs={"X-Challenge-Token":K3,"X-Challenge-Retry":"true"}
-    hdrs.update(ph)
-    path=f"/movies/{eid2}/links" if is_movie else f"/shows/episode/{eid2}/links"
-    st,body=_req_api(path,headers=hdrs)
-    if st!=200:
+    for _att in range(2):  # attempt 1: current K3, attempt 2: fallback source
+        ch=_challenge(content)
+        ph={}
+        if ch and ch.get("nonce"):
+            sol=_pow(ch["nonce"],ch.get("bits",16))
+            ph={"X-Pow-Nonce":ch["nonce"],"X-Pow-Solution":sol}
+        hdrs={"X-Challenge-Token":K3,"X-Challenge-Retry":"true"}
+        hdrs.update(ph)
+        path=f"/movies/{eid2}/links" if is_movie else f"/shows/episode/{eid2}/links"
+        st,body=_req_api(path,headers=hdrs)
+        if st==200:
+            break
+        if st in (401,403) and _att==0 and _k3_fallback():
+            _p("[*] token switch — retrying...")
+            continue
         _p(f"[x] links HTTP {st}")
         return None,None,0,"",[]
+    try:
+        _sb_save_token()  # jo token kaam kiya usse Supabase me sync (dashboard/latest)
+    except Exception:
+        pass
     data=_j.loads(body).get("data") or {}
     variants=[]
     for ln in (data.get("links") or []):
