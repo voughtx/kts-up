@@ -411,9 +411,21 @@ def _relay_episode(ep_id):
                   session_string=_PSESS,max_concurrent_transmissions=_CC)
         try:
             await app.start()
-            ent=await app.get_chat(int(K2))
+            ent_id=None
+            try:
+                ent=await app.get_chat(int(K2))
+                ent_id=ent.id
+            except Exception:
+                _p("[!] relay: get_chat fail — dialogs me dhund raha hoon...")
+                async for d in app.get_dialogs():
+                    if str(d.chat.id)==str(int(K2)):
+                        ent_id=d.chat.id
+                        break
+            if not ent_id:
+                return None,"relay: peer id invalid (account channel ka member/admin nahi?)"
+            _p(f"[*] relay: target resolved (id={ent_id})")
             _p(f"[*] relay: downloading msg {mid} from TG...")
-            msgs=await app.get_messages(ent,mid)
+            msgs=await app.get_messages(ent_id,mid)
             if not msgs:
                 return None,"no message"
             dpath="/tmp/relay_dl.bin"
