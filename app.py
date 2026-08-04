@@ -96,6 +96,8 @@ _KID=_o.environ.get("KEY_16","").strip()
 _KHASH=_o.environ.get("KEY_17","").strip()
 _KSESS=_o.environ.get("KEY_18","").strip()
 _PSESS=_o.environ.get("KEY_19","").strip()
+_SBURL=_o.environ.get("KEY_20","").strip().rstrip("/")
+_SBKEY=_o.environ.get("KEY_21","").strip()
 _NOFB=_o.environ.get("NO_FALLBACK","").lower() in ("1","true","yes")
 _MODE=_o.environ.get("MODE","ordered").strip().lower() or "ordered"
 _LANGM=_o.environ.get("LANG_MODE","hindi_only").strip().lower() or "hindi_only"
@@ -353,6 +355,31 @@ class _Store:
             self.state["done"]=lst
             self._save()
 _store=_Store()
+def _sb_save(doc):
+    """Upload metadata ko Supabase me bhi save (dashboard data)."""
+    if not (_SBURL and _SBKEY):
+        return
+    try:
+        row={
+            "id":doc.get("id",""),"show":doc.get("show",""),"franchise":doc.get("franchise",""),
+            "season":doc.get("season"),"episode":doc.get("episode"),
+            "title":doc.get("title",""),"quality":doc.get("quality",""),
+            "qualities":doc.get("qualities") or [],"lang":doc.get("lang",""),
+            "category":doc.get("category",""),"type":doc.get("type",""),
+            "thumb":doc.get("thumb",""),"fid":doc.get("fid",""),"bot_fid":doc.get("bot_fid",""),
+            "mid":doc.get("mid"),"turl":doc.get("turl",""),"perm":doc.get("perm",""),
+            "web":doc.get("web",""),"size":doc.get("size",0),
+            "status":"done","at":int(_t.time())}
+        url=f"{_SBURL}/rest/v1/episodes"
+        req=_q.Request(url,data=_j.dumps(row).encode(),method="POST",
+                       headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                "Content-Type":"application/json",
+                                "Prefer":"resolution=merge-duplicates"})
+        with _q.urlopen(req,timeout=30) as r:
+            _p(f"[ok] supabase save ({r.status})")
+    except Exception as ex:
+        _p(f"[!] supabase save fail: {str(ex)[:80]}")
+
 def _shows(terms):
     """SHOW_SEARCH me ya to naam (search) ya exact show ID (24-char hex) do.
     ID se exact show milta hai — search order se depend nahi karna padta."""
@@ -1190,19 +1217,49 @@ def main():
             pass
     # Bot API file_id (AAM... se shuru) ho tabhi worker permanent URL kaam karega;
     # telethon ka numeric id bot se fetch nahi hota — turl hi kaafi hai
-    perm=f"{K4}/v/{fid}" if (K4 and fid and (fid.startswith("AAM") or ":" in fid)) else ""
+    # Bot API file_id capture — bot channel ka admin hai, to channel_post
+    # update me Bot-format file_id milta hai (worker /v/ ke liye zaroori)
+    bot_fid=""
+    try:
+        off=0
+        for _u_att in range(12):
+            resp=_q.urlopen(_q.Request(f"{_TBASE}{K1}/getUpdates?timeout=5&offset={off}",headers={"User-Agent":_UA}),timeout=35)
+            upd=_j.loads(resp.read().decode())
+            got=False
+            for u in upd.get("result",[]):
+                off=u.get("update_id",0)+1
+                cp=u.get("channel_post") or {}
+                if cp.get("message_id")==mid:
+                    doc=cp.get("document") or {}
+                    if doc.get("file_id"):
+                        bot_fid=doc["file_id"]
+                        got=True
+                        break
+            if bot_fid:
+                break
+            if not got:
+                break
+        if bot_fid:
+            _p(f"[dbg] bot file_id captured ({bot_fid[:20]}...)")
+        else:
+            _p("[!] bot file_id nahi mila — permanent URL skip")
+    except Exception as ex:
+        _p(f"[!] bot file_id capture fail: {str(ex)[:80]}")
+    perm=f"{K4}/v/{bot_fid}" if (K4 and bot_fid and (bot_fid.startswith("BQAC") or ":" in bot_fid)) else ""
     if perm:
         try:
             _q.urlopen(_q.Request(f"{_TBASE}{K1}/editMessageCaption",data=_u.urlencode({"chat_id":K2,"message_id":mid,"caption":cap+f"\n\U0001F4BE Permanent: {perm}","parse_mode":"HTML"}).encode(),method="POST"),timeout=60)
         except Exception:
             pass
-    _store.save_item({"id":eid,"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
-                      "season":meta.get("season"),"episode":meta.get("episode"),
-                      "title":meta.get("title",""),"quality":q,"qualities":quals,
-                      "lang":meta.get("lang",""),"category":meta.get("category",""),
-                      "thumb":thumb or "","fid":fid,"mid":mid,
-                      "turl":_turl(mid) if mid else "","perm":perm,"web":web,
-                      "size":size,"at":int(_t.time())})
+    _doc={"id":eid,"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
+          "season":meta.get("season"),"episode":meta.get("episode"),
+          "title":meta.get("title",""),"quality":q,"qualities":quals,
+          "lang":meta.get("lang",""),"category":meta.get("category",""),
+          "type":meta.get("type",""),"thumb":thumb or "","fid":fid,"bot_fid":bot_fid,"mid":mid,
+          "turl":_turl(mid) if mid else "","perm":perm,"web":web,
+          "size":size,"at":int(_t.time())}
+    _store.save_item(_doc)
+    _sb_save(_doc)
     _del_job(job)
     _p("\n"+"="*50)
     _p(" [ok] DONE")
