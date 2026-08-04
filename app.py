@@ -1431,6 +1431,7 @@ def main():
             _p("[!] bot file_id nahi mila — permanent URL skip")
     except Exception as ex:
         _p(f"[!] bot file_id capture fail: {str(ex)[:80]}")
+    perm = f"{K4}/v/{bot_fid}" if bot_fid else ""
     # /v/ (bot file_id) 20MB limit ki wajah se badi files par fail karta hai —
     # caption me asli RELAY link (agar ban chuki) dikhao, warna TG link
     _rlink=""

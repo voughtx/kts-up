@@ -1,0 +1,23 @@
+name: backfill
+on:
+  workflow_dispatch:
+    inputs:
+      doc:
+        description: "base64 JSON doc"
+        required: true
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q pymongo[srv]
+      - name: backfill
+        env:
+          KEY_7: ${{ secrets.KEY_7 }}
+          KEY_20: ${{ secrets.KEY_20 }}
+          KEY_21: ${{ secrets.KEY_21 }}
+          DOC_JSON_B64: ${{ inputs.doc }}
+        run: python backfill.py
