@@ -24,6 +24,14 @@ on:
         description: "true = sirf pyrogram, telethon fallback band"
         required: false
         default: "false"
+      mode:
+        description: "ordered / random / popular"
+        required: false
+        default: "ordered"
+      lang_mode:
+        description: "hindi_only / all"
+        required: false
+        default: "hindi_only"
   repository_dispatch:
     types: [run-task]
 concurrency:
@@ -71,5 +79,8 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
           NO_FALLBACK: ${{ inputs.no_fallback }}
           CONCURRENCY: ${{ secrets.CONCURRENCY }}
+          MODE: ${{ inputs.mode }}
+          LANG_MODE: ${{ inputs.lang_mode }}
+          PRIORITY: ${{ secrets.PRIORITY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python app.py
