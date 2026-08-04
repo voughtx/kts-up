@@ -351,13 +351,28 @@ class _Store:
             self._save()
 _store=_Store()
 def _shows(terms):
+    """SHOW_SEARCH me ya to naam (search) ya exact show ID (24-char hex) do.
+    ID se exact show milta hai — search order se depend nahi karna padta."""
     out=[]
     for term in [t.strip() for t in terms.split(",") if t.strip()]:
+        if _r.fullmatch(r"[a-f0-9]{24}",term.lower()):
+            j=_json(f"/shows/{term}")
+            if j and j.get("data"):
+                out.append(j["data"])
+                continue
+            _p(f"[!] show id '{term}' not found")
+            continue
         j=_json(f"/shows?search={term}")
         if not j or not j.get("data"):
             _p(f"[!] '{term}' not found")
             continue
-        out.append(j["data"][0])
+        # pehla result lo — par agar exact title match ho to wo prefer karo
+        best=j["data"][0]
+        for cand in j["data"]:
+            if (cand.get("title") or "").lower()==term.lower():
+                best=cand
+                break
+        out.append(best)
     return out
 def _seasons(sid):
     j=_json(f"/shows/{sid}")
@@ -386,61 +401,62 @@ def _meta(eid):
         sh=sid.get("showId") or {}
         if isinstance(sh,dict):
             stitle=sh.get("title") or ""
-    return {"title":d.get("title") or "","image":d.get("image") or "","season":snum,"episode":d.get("episodeNumber") or d.get("episode_number"),"show_title":stitle}
+    dur=d.get("durationMinutes") or d.get("duration") or 0
+    try:
+        dur=int(dur)
+    except Exception:
+        dur=0
+    return {"title":d.get("title") or "","image":d.get("image") or "","season":snum,
+            "episode":d.get("episodeNumber") or d.get("episode_number"),
+            "show_title":stitle,"duration":dur}
 def _pick(shows,done):
+    """Agli episode pick karo. Show tabhi skip hoga jab uske SAARE (non-S0)
+    episodes uploaded ho jayenge — pehle show poora, phir agli show."""
     if _ITEM:
         m=_meta(_ITEM)
         return {"id":_ITEM,"meta":m,"ovr":True}
     idx=_store.state.get("i0",0)
-    done_shows=_store.state.get("done",[])
     for off in range(len(shows)):
         si=(idx+off)%len(shows)
-        if si in done_shows:
-            continue
         show=shows[si]
         seasons=_seasons(show["_id"])
         if not _S0:
             seasons=[s for s in seasons if (s.get("seasonNumber") or 0)!=0]
         if not seasons:
-            _store.mark_done(si)
             continue
-        s_idx=_store.state.get("i1",0) if si==_store.state.get("i0",0) else 0
+        # pehle check: kya is show ke saare episodes ho gaye?
+        all_done=True
+        first_pick=None
         for so in range(len(seasons)):
-            ss=(s_idx+so)%len(seasons)
-            season=seasons[ss]
+            season=seasons[so]
             eps=_eps(show["_id"],season["_id"])
             if not eps:
                 continue
-            e_idx=_store.state.get("i2",0) if (si==_store.state.get("i0",0) and ss==s_idx) else 0
             for eo in range(len(eps)):
-                ep=eps[(e_idx+eo)%len(eps)]
+                ep=eps[eo]
                 if ep["_id"] in done:
                     continue
-                m=_meta(ep["_id"])
-                if not m.get("title"):
-                    m["title"]=ep.get("title") or "Episode"
-                return {"id":ep["_id"],"show":show,"season":season,"ep":ep,"meta":m,"ovr":False,"seasons":seasons,"si":ss,"ei":(e_idx+eo)%len(eps),"eps":eps}
-        _store.mark_done(si)
-        _store.state["i1"]=0
-        _store.state["i2"]=0
+                all_done=False
+                if first_pick is None:
+                    m=_meta(ep["_id"])
+                    if not m.get("title"):
+                        m["title"]=ep.get("title") or "Episode"
+                    first_pick={"id":ep["_id"],"show":show,"season":season,"ep":ep,
+                                "meta":m,"ovr":False,"seasons":seasons,"si":so,"ei":eo,"eps":eps}
+        if all_done:
+            continue  # ye show complete — agli show
+        if first_pick:
+            # state update: isi jagah se continue hoga
+            _store.state["i0"]=si
+            _store.state["i1"]=first_pick["si"]
+            _store.state["i2"]=first_pick["ei"]+1
+            _store._save()
+            return first_pick
     return None
 def _advance(pick):
     if pick.get("ovr"):
         return
-    seasons,si,ei=pick["seasons"],pick["si"],pick["ei"]
-    eps=pick["eps"]
-    if ei+1<len(eps):
-        _store.state["i2"]=ei+1
-    elif si+1<len(seasons):
-        _store.state["i1"]=si+1
-        _store.state["i2"]=0
-    else:
-        _store.mark_done(_store.state.get("i0",0))
-        shows=_shows(K6)
-        if shows:
-            _store.state["i0"]=(_store.state.get("i0",0)+1)%len(shows)
-        _store.state["i1"]=0
-        _store.state["i2"]=0
+    # _pick hi self-heal karta hai (uploaded ids source of truth) — yahan bas save
     _store._save()
 def _make_item_link(eid,title,se_tag):
     content=f"episode:{eid}"
@@ -720,28 +736,35 @@ def _turl(mid):
     if cid.startswith("-100"):
         cid=cid[4:]
     return f"https://t.me/c/{cid}/{mid}"
-def _caption(meta,q,target,web,thumb_url=""):
+_SEP="\u25AC"*24
+def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     lines=[]
     if meta.get("title"):
-        lines.append(f"\U0001F3AC <code>{_esc(meta['title'])}</code>")
+        lines.append(f"\U0001F3AC <b><code>{_esc(meta['title'])}</code></b>")
     se=[]
     if meta.get("show_title"):
         se.append(_esc(meta["show_title"]))
     if meta.get("season") is not None and meta.get("episode") is not None:
-        se.append(f"<b>S{meta['season']}-E{meta['episode']}</b>")
+        se.append(f"S{meta['season']}-E{meta['episode']}")
     if se:
-        lines.append("\U0001F4FA <code>"+" \u00B7 ".join(se)+"</code>")
+        lines.append("\U0001F4FA <b><code>"+" \u00B7 ".join(se)+"</code></b>")
+    lines.append(_SEP)
     if q:
-        lines.append(f"\u2699\uFE0F Quality: {_esc(q)}")
-    # Target: web domain ka naam (e.g. "Kartoons") — clickable link
+        lines.append(f"\u2699\uFE0F Quality: <b>{_esc(q)}</b>")
+    if size:
+        mb=size/(1024*1024)
+        lines.append(f"\U0001F4C2 Size: <b>{mb:.0f} \u2022 MB</b>")
+    if duration:
+        lines.append(f"\U0001F4BF Duration: <b>{int(duration)} \u2022 Min</b>")
+    lines.append(_SEP)
     if web:
         dom=web.split("//")[-1].split("/")[0]
         lab=dom.split(".")[0].capitalize() if "." in dom else dom
-        lines.append(f"\U0001F3AF Target: <a href=\"{_esc(web)}\">{_esc(lab)}</a>")
+        lines.append(f"\U0001F3AF Target: <b><a href=\"{_esc(web)}\">{_esc(lab)}</a></b>")
     elif target:
-        lines.append(f"\U0001F3AF Target: {_esc(target)}")
+        lines.append(f"\U0001F3AF Target: <b>{_esc(target)}</b>")
     if thumb_url:
-        lines.append(f"\U0001F5BC\uFE0F <a href=\"{_esc(thumb_url)}\">Thumbnail</a>")
+        lines.append(f"\U0001F5BC\uFE0F <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
     return "\n".join(lines)
 def _split_send(link,base,cap,thumb):
     tmp="/tmp/big.mp4"
@@ -825,7 +848,7 @@ def main():
     job=link.rstrip("/").split("/")[-1]
     _p(f"   ready | {size/(1024*1024):.0f} MB | {q}")
     thumb=meta.get("image") or None
-    cap=_caption(meta,q,_TGT or K5,web,thumb or "")
+    cap=_caption(meta,q,_TGT or K5,web,thumb or "",size or 0,meta.get("duration") or 0)
     if size and size>_SPLIT and not _KSESS:
         _p(f"[!] {size/(1024*1024):.0f} MB > limit — split")
         base=(name or "item").replace(".mp4","")
