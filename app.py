@@ -451,7 +451,11 @@ def _relay_episode(ep_id):
             if repo:
                 tag="rel-"+str(int(_t.time()*1000))
                 r1=_s.run(["gh","release","create",tag,"--repo",repo,"--title",tag,"--notes","temp"],capture_output=True,text=True)
+                if r1.returncode!=0:
+                    _p(f"[!] gh create fail: {r1.stderr.strip()[:200]}")
                 r2=_s.run(["gh","release","upload",tag,path,"--repo",repo,"--clobber","--name="+fname],capture_output=True,text=True)
+                if r2.returncode!=0:
+                    _p(f"[!] gh upload fail: {r2.stderr.strip()[:200]}")
                 if r1.returncode==0 and r2.returncode==0:
                     link=f"https://github.com/{repo}/releases/download/{tag}/{fname}"
                     _p(f"[*] relay: github release ok")
@@ -461,6 +465,8 @@ def _relay_episode(ep_id):
                 if lb.startswith("http"):
                     link=lb
                     _p(f"[*] relay: litterbox ok")
+                else:
+                    _p(f"[!] litterbox fail: {lb[:150]}")
             try:
                 _o.remove(path)
             except Exception:
