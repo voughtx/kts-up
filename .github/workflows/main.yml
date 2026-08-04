@@ -85,6 +85,6 @@ jobs:
           LANG_MODE: ${{ inputs.lang_mode }}
           PRIORITY: ${{ secrets.PRIORITY }}
           RELAY_ID: ${{ github.event.client_payload.id }}
-          RELAY_MODE: ${{ github.event.event_type }}
+          RELAY_MODE: ${{ github.event.action }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python app.py
