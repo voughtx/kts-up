@@ -11,15 +11,29 @@ REPO = os.environ.get("GITHUB_REPOSITORY", "")
 GH_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 log_txt = ""
-if JOB_ID and REPO and GH_TOKEN:
+if RUN_ID and REPO and GH_TOKEN:
     try:
+        # 1. numeric job id nikaalo (github.job naam deta hai, id nahi)
         out = subprocess.run(
             ["curl", "-sL", "-H", f"Authorization: Bearer {GH_TOKEN}",
              "-H", "Accept: application/vnd.github+json",
-             f"https://api.github.com/repos/{REPO}/actions/jobs/{JOB_ID}/logs"],
-            capture_output=True, text=True, timeout=90,
+             f"https://api.github.com/repos/{REPO}/actions/runs/{RUN_ID}/jobs"],
+            capture_output=True, text=True, timeout=60,
         )
-        log_txt = (out.stdout or "") + (out.stderr or "")
+        jid = ""
+        try:
+            jid = str(json.loads(out.stdout)["jobs"][0]["id"])
+        except Exception:
+            jid = JOB_ID
+        if jid:
+            # 2. us job ka log (plain text, live)
+            out2 = subprocess.run(
+                ["curl", "-sL", "-H", f"Authorization: Bearer {GH_TOKEN}",
+                 "-H", "Accept: application/vnd.github+json",
+                 f"https://api.github.com/repos/{REPO}/actions/jobs/{jid}/logs"],
+                capture_output=True, text=True, timeout=90,
+            )
+            log_txt = (out2.stdout or "") + (out2.stderr or "")
     except Exception as e:
         log_txt = f"[log fetch fail] {e}"
 if not log_txt.strip():
