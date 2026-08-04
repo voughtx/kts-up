@@ -736,7 +736,7 @@ def _turl(mid):
     if cid.startswith("-100"):
         cid=cid[4:]
     return f"https://t.me/c/{cid}/{mid}"
-_SEP="\u25AC"*24
+_SEP="\u25AC"*18
 def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     lines=[]
     if meta.get("title"):
@@ -753,9 +753,15 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
         lines.append(f"\u2699\uFE0F Quality: <b>{_esc(q)}</b>")
     if size:
         mb=size/(1024*1024)
-        lines.append(f"\U0001F4C2 Size: <b>{mb:.0f} \u2022 MB</b>")
+        if mb>=1024:
+            lines.append(f"\U0001F4C2 Size: <b>{mb/1024:.2f} \u2022 GB</b>")
+        else:
+            lines.append(f"\U0001F4C2 Size: <b>{mb:.2f} \u2022 MB</b>")
     if duration:
-        lines.append(f"\U0001F4BF Duration: <b>{int(duration)} \u2022 Min</b>")
+        secs=int(duration)*60
+        mm=secs//60
+        ss=secs%60
+        lines.append(f"\U0001F4BF Duration: <b>{mm}:{ss:02d} \u2022 Min</b>")
     lines.append(_SEP)
     if web:
         dom=web.split("//")[-1].split("/")[0]
