@@ -429,8 +429,15 @@ def _relay_episode(ep_id):
             msg1=msgs[0] if isinstance(msgs,list) and msgs else msgs
             if not msg1:
                 return None,"no message"
-            dpath="/tmp/relay_dl.bin"
-            path=await msg1.download(file_path=dpath)
+            # Pyrogram download() — file_path param is version me nahi chalta,
+            # isliye bina argument (wo khud path return karta hai)
+            try:
+                path=await msg1.download()
+            except TypeError:
+                # fallback: file_path ke saath try (naye versions)
+                path=await msg1.download(file_path="/tmp/relay_dl.bin")
+            if isinstance(path,list):
+                path=path[0] if path else None
             if not path:
                 return None,"no media"
             fsz=_o.path.getsize(path)
