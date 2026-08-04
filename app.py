@@ -430,7 +430,7 @@ def _relay_episode(ep_id):
             if not msg1:
                 return None,"no message"
             dpath="/tmp/relay_dl.bin"
-            path=await msg1.download(file=dpath)
+            path=await msg1.download(file_path=dpath)
             if not path:
                 return None,"no media"
             fsz=_o.path.getsize(path)
