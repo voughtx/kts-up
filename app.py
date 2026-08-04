@@ -97,7 +97,13 @@ _KHASH=_o.environ.get("KEY_17","").strip()
 _KSESS=_o.environ.get("KEY_18","").strip()
 _PSESS=_o.environ.get("KEY_19","").strip()
 _NOFB=_o.environ.get("NO_FALLBACK","").lower() in ("1","true","yes")
-_CC=min(int(_o.environ.get("CONCURRENCY","100")),100)
+_CC=100
+try:
+    _ccs=_o.environ.get("CONCURRENCY","").strip()
+    if _ccs:
+        _CC=min(int(_ccs),100)
+except Exception:
+    _CC=100
 _SPLIT=int(_o.environ.get("SPLIT_MB","1700"))*1024*1024
 _DRY=_o.environ.get("DRY_RUN","").lower() in ("1","true","yes")
 _ITEM=_o.environ.get("ITEM_ID","").strip()
