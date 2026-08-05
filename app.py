@@ -1177,9 +1177,9 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                     fpath=f"{outd}/{p}"
                     fname_p=f"{base}.{ci+pi+1:03d}.mp4"
                     _p(f"   uploading part {ci+pi+1}/{len(parts)}...")
-                    up=await app.upload_document(fpath,file_name=fname_p)
                     is_last=(ci+pi+1==len(parts))
-                    media.append(InputMediaDocument(up,caption=caption if is_last else None,
+                    media.append(InputMediaDocument(fpath,file_name=fname_p,
+                                                    caption=caption if is_last else None,
                                                     parse_mode="HTML" if is_last else None))
                 msgs=await app.send_media_group(ent,media)
                 for pi,msg in enumerate(msgs):
