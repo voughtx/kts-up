@@ -1260,8 +1260,14 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                     fpath=f"{outd}/{p}"
                     fname_p=f"{base}.{ci+pi+1:03d}.mp4"
                     _p(f"   uploading part {ci+pi+1}/{len(parts)}...")
+                    npath=f"{outd}/{fname_p}"
+                    if fpath!=npath:
+                        try:
+                            _o.replace(fpath,npath)
+                        except Exception:
+                            pass
                     is_last=(ci+pi+1==len(parts))
-                    media.append(InputMediaDocument(fpath,file_name=fname_p,
+                    media.append(InputMediaDocument(npath,
                                                     caption=caption if is_last else None,
                                                     parse_mode="HTML" if is_last else None))
                 msgs=await app.send_media_group(ent,media)
