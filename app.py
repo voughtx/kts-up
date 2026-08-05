@@ -1335,16 +1335,15 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     showname=meta.get("show_title") or ""
     if showname=="Doraemon":
         showname="Doraemon (HUNGAMA)"
+    is_movie=(meta.get("type") or "").startswith("movie")
     if meta.get("title"):
         lines.append(f"\U0001F3AC <b><code>{_esc(meta['title'])}</code></b>")
-    if showname:
+    if showname and not is_movie:
         se=[]
         se.append(_esc(showname))
         if meta.get("season") is not None and meta.get("episode") is not None:
             se.append(f"S{meta['season']}-E{meta['episode']}")
         lines.append("\U0001F4C0 <b><code>"+" \u00B7 ".join(se)+"</code></b>")
-    elif (meta.get("type") or "").startswith("movie"):
-        lines.append(f"\U0001F4C0 <b><code>{_esc(meta.get('title') or '')}</code></b>")
     lines.append(_SEP)
     if q:
         lines.append(f"\u2699\uFE0F Quality: <b>{_esc(q)}</b>")
@@ -1353,7 +1352,7 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     if size:
         mb=size/(1024*1024)
         if mb>=1024:
-            sz=f"{int(round(mb/1024))} GB"
+            sz=f"{mb/1024:.1f} GB"
         else:
             sz=f"{int(round(mb))} MB"
     if duration:
@@ -1503,15 +1502,20 @@ def main():
             _p("[x] split fail")
             _del_job(job)
             _y.exit(1)
-        _store.save_item({"id":eid,"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
-                          "season":meta.get("season"),"episode":meta.get("episode"),
-                          "title":meta.get("title",""),"quality":q,"qualities":quals,
-                          "lang":meta.get("lang",""),"category":meta.get("category",""),
-                          "thumb":thumb or "","parts":results,"web":web,
-                          "at":int(_t.time()),"size":size})
+        _p1=results[0]
+        _turl1=f"https://t.me/c/{str(K2).replace('-100','')}/{_p1.get('mid',0)}"
+        _sd={"id":eid,"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
+             "season":meta.get("season"),"episode":meta.get("episode"),
+             "title":meta.get("title",""),"quality":q,"qualities":quals,
+             "lang":meta.get("lang",""),"category":meta.get("category",""),
+             "thumb":thumb or "","fid":_p1.get("fid",""),"bot_fid":"","mid":_p1.get("mid"),
+             "turl":_turl1,"perm":"","web":web,"size":size,"at":int(_t.time())}
+        _store.save_item(_sd)
+        _sb_save(_sd)
         _del_job(job)
         _sb_pick_clear()
         _sb_health("ok","split")
+        _advance(pick)
         _p("\n[ok] done (split). saved.")
         return
     st_msg=""

@@ -9,6 +9,10 @@ on:
         description: "optional limit"
         required: false
         default: "200"
+      pin_mid:
+        description: "poster mid to pin (optional)"
+        required: false
+        default: ""
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -39,5 +43,6 @@ jobs:
           KEY_21: ${{ secrets.KEY_21 }}
           SHOW_ID: ${{ secrets.SHOW_ID }}
           SHOW_ID2: ${{ secrets.SHOW_ID2 }}
+          PIN_MID: ${{ inputs.pin_mid }}
           LIMIT: ${{ inputs.limit }}
         run: python ${{ inputs.script }}
