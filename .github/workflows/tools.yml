@@ -38,5 +38,6 @@ jobs:
           KEY_20: ${{ secrets.KEY_20 }}
           KEY_21: ${{ secrets.KEY_21 }}
           SHOW_ID: ${{ secrets.SHOW_ID }}
+          SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           LIMIT: ${{ inputs.limit }}
         run: python ${{ inputs.script }}

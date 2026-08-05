@@ -530,6 +530,8 @@ def _show_poster(pick):
         return
     show=pick.get("show") or {}
     title=show.get("title") or pick.get("meta",{}).get("show_title","")
+    if title=="Doraemon":
+        title="Doraemon (HUNGAMA)"
     img=show.get("image") or ""
     seasons=pick.get("seasons") or []
     tot_eps=0
@@ -552,7 +554,7 @@ def _show_poster(pick):
     except Exception as ex:
         _p(f"[!] poster download fail: {str(ex)[:80]}")
         return
-    cap=f"<b>{_esc(title)}</b>\nTotal S{n_seasons} | Ep{tot_eps}"
+    cap=f"<b>{_esc(title)}</b>\nTotal \u2022 S{n_seasons} | Ep{tot_eps}"
     async def _do():
         app=_Pyro(":memory:",api_id=int(_KID),api_hash=_KHASH,session_string=_PSESS,
                   max_concurrent_transmissions=_CC)
@@ -1330,11 +1332,14 @@ def _turl(mid):
 _SEP="\u25AC"*18
 def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     lines=[]
+    showname=meta.get("show_title") or ""
+    if showname=="Doraemon":
+        showname="Doraemon (HUNGAMA)"
     if meta.get("title"):
         lines.append(f"\U0001F3AC <b><code>{_esc(meta['title'])}</code></b>")
-    if meta.get("show_title"):
+    if showname:
         se=[]
-        se.append(_esc(meta["show_title"]))
+        se.append(_esc(showname))
         if meta.get("season") is not None and meta.get("episode") is not None:
             se.append(f"S{meta['season']}-E{meta['episode']}")
         lines.append("\U0001F4C0 <b><code>"+" \u00B7 ".join(se)+"</code></b>")
