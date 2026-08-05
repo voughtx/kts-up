@@ -1356,7 +1356,7 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                 return []
             results=[]
             from pyrogram.types import InputMediaDocument
-            # FAST: parallel upload (upload_file) + live progress + media group
+            # FAST: parallel upload (send_document + progress) -> media group (file_ids se instant)
             _p(f"[*] uploading {len(parts)} parts (parallel x{min(3,len(parts))})...")
             sem=_ac.Semaphore(min(3,len(parts)))
             async def _up_one(idx,p):
@@ -1371,21 +1371,27 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                             sp=(cur-_last[0])/(now-_lt[0])/(1024*1024)
                             _p(f"   [up] part {idx+1}/{len(parts)}: {cur/(1024*1024):.0f}/{tot/(1024*1024):.0f} MB ({cur*100//tot}%) | {sp:.1f} MB/s")
                             _last[0]=cur; _lt[0]=now
-                    fid=await app.upload_file(path,progress=_prog)
+                    m=await app.send_document(cid,path,disable_notification=True,progress=_prog)
+                    fid=m.document.file_id or ""
                     _p(f"   [ok] part {idx+1}/{len(parts)} uploaded ({tsz/(1024*1024):.0f} MB)")
-                    return idx,fid
+                    return idx,fid,m.id
             ups=await _ac.gather(*[_up_one(i,p) for i,p in enumerate(parts)])
             ups.sort(key=lambda x:x[0])
-            # media group bhejo (files already uploaded — instant)
+            # temp messages delete
+            try:
+                await app.delete_messages(cid,[m_id for _,_,m_id in ups])
+            except Exception:
+                pass
+            # media group (files already uploaded — instant)
             for ci in range(0,len(ups),10):
                 chunk=ups[ci:ci+10]
                 media=[]
-                for idx,fid in chunk:
+                for idx,fid,_ in chunk:
                     is_last=(idx==len(parts)-1)
                     media.append(InputMediaDocument(fid,thumb=thumb_path,
                                                     caption=cap if is_last else None,
                                                     parse_mode=_PM.HTML if is_last else None))
-                msgs=await app.send_media_group(ent.id if hasattr(ent,"id") else ent,media)
+                msgs=await app.send_media_group(cid,media)
                 for pi,msg in enumerate(msgs):
                     fid2=""
                     if msg.document:
