@@ -127,14 +127,11 @@ async def main():
     async def session_job(i):
         app = apps[i]
         # apna chat resolve + message fetch (apna file_reference)
+        # bots get_dialogs nahi kar sakte — sirf get_chat (wo admin hain channel ke)
         try:
             ch = await app.get_chat(int(K2))
         except Exception:
             ch = None
-            async for d in app.get_dialogs():
-                if d.chat and d.chat.id == int(K2):
-                    ch = d.chat
-                    break
         if ch is None:
             return None
         mm = await app.get_messages(ch.id if hasattr(ch, "id") else ch, SRC_MID)
