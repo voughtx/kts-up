@@ -18,25 +18,25 @@ LINK_ID = os.environ.get("LINK_ID", "link").strip()
 EXP_H = int(os.environ.get("EXP_H", "24"))
 
 def fetch_cdn(msg_url):
-    """t.me/<pub>/<mid>?single follow -> final CDN URL; fallback t.me/s scrape"""
+    """t.me/<pub>/<mid> post page -> HTML mein embedded CDN URL nikaalo"""
     try:
-        r = subprocess.run(["curl", "-s", "-o", "/dev/null", "-w", "%{url_effective}",
-                            "-L", "--max-time", "20", "-A", "Mozilla/5.0", msg_url],
-                           capture_output=True, text=True, timeout=30)
-        final = r.stdout.strip()
-        if "telesco.pe" in final or "cdn" in final.lower():
-            return final
-    except Exception:
-        pass
-    # fallback: t.me/s page scrape
-    try:
-        s_url = msg_url.replace("https://t.me/", "https://t.me/s/")
-        req = u.Request(s_url, headers={"User-Agent": "Mozilla/5.0"})
+        # post page (https://t.me/<pub>/<mid>) — document ke liye bhi CDN milta hai
+        req = u.Request(msg_url, headers={"User-Agent": "Mozilla/5.0"})
         with u.urlopen(req, timeout=20) as resp:
             html = resp.read().decode("utf-8", "replace")
-        m = re.search(r'https://cdn\d+\.telesco\.pe/[^"\s&]+', html)
+        m = re.search(r'https://cdn\d+\.telesco\.pe/[^"\'<>\s]+', html)
         if m:
             return m.group(0)
+    except Exception:
+        pass
+    # fallback: ?single redirect
+    try:
+        r = subprocess.run(["curl", "-s", "-o", "/dev/null", "-w", "%{url_effective}",
+                            "-L", "--max-time", "20", "-A", "Mozilla/5.0", msg_url + "?single"],
+                           capture_output=True, text=True, timeout=30)
+        final = r.stdout.strip()
+        if "telesco.pe" in final:
+            return final
     except Exception:
         pass
     return None
