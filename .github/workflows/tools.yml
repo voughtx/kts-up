@@ -17,6 +17,14 @@ on:
         description: "comma mids to inspect (optional)"
         required: false
         default: ""
+      link_id:
+        description: "links table id (optional)"
+        required: false
+        default: "movie_test"
+      out_name:
+        description: "joined output filename (optional)"
+        required: false
+        default: ""
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -49,5 +57,9 @@ jobs:
           SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           PIN_MID: ${{ inputs.pin_mid }}
           MIDS: ${{ inputs.mids }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINK_ID: ${{ inputs.link_id }}
+          OUT_NAME: ${{ inputs.out_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           LIMIT: ${{ inputs.limit }}
         run: python ${{ inputs.script }}
