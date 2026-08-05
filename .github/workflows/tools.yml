@@ -37,10 +37,14 @@ on:
         description: "comma link ids to delete (optional)"
         required: false
         default: ""
-      conns:
-        description: "FastTelethon connections (default 20)"
+      pub:
+        description: "public channel username (optional)"
         required: false
-        default: "20"
+        default: ""
+      exp_h:
+        description: "link expiry hours"
+        required: false
+        default: "24"
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -63,7 +67,7 @@ jobs:
           restore-keys: |
             pip-tools-${{ runner.os }}-
       - name: deps
-        run: pip install -q pymongo[srv] pyrogram TgCrypto telethon cryptg || true
+        run: pip install -q pymongo[srv] pyrogram TgCrypto || true
       - name: run tool
         env:
           KEY_1: ${{ secrets.KEY_1 }}
@@ -72,7 +76,6 @@ jobs:
           KEY_13: ${{ secrets.KEY_13 }}
           KEY_16: ${{ secrets.KEY_16 }}
           KEY_17: ${{ secrets.KEY_17 }}
-          KEY_18: ${{ secrets.KEY_18 }}
           KEY_19: ${{ secrets.KEY_19 }}
           KEY_8: ${{ secrets.KEY_8 }}
           KEY_20: ${{ secrets.KEY_20 }}
@@ -81,8 +84,9 @@ jobs:
           SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           PIN_MID: ${{ inputs.pin_mid }}
           MIDS: ${{ inputs.mids }}
-          CONNS: ${{ inputs.conns }}
           LINK_IDS: ${{ inputs.link_ids }}
+          PUB: ${{ inputs.pub }}
+          EXP_H: ${{ inputs.exp_h }}
           MOVIE_ID: ${{ inputs.movie_id }}
           PIN: ${{ inputs.pin }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
