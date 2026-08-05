@@ -37,6 +37,10 @@ on:
         description: "comma link ids to delete (optional)"
         required: false
         default: ""
+      conns:
+        description: "FastTelethon connections (default 20)"
+        required: false
+        default: "20"
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -68,6 +72,7 @@ jobs:
           KEY_13: ${{ secrets.KEY_13 }}
           KEY_16: ${{ secrets.KEY_16 }}
           KEY_17: ${{ secrets.KEY_17 }}
+          KEY_18: ${{ secrets.KEY_18 }}
           KEY_19: ${{ secrets.KEY_19 }}
           KEY_8: ${{ secrets.KEY_8 }}
           KEY_20: ${{ secrets.KEY_20 }}
@@ -76,6 +81,7 @@ jobs:
           SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           PIN_MID: ${{ inputs.pin_mid }}
           MIDS: ${{ inputs.mids }}
+          CONNS: ${{ inputs.conns }}
           LINK_IDS: ${{ inputs.link_ids }}
           MOVIE_ID: ${{ inputs.movie_id }}
           PIN: ${{ inputs.pin }}
