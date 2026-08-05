@@ -25,6 +25,14 @@ on:
         description: "joined output filename (optional)"
         required: false
         default: ""
+      movie_id:
+        description: "movie id for poster test (optional)"
+        required: false
+        default: ""
+      pin:
+        description: "pin poster? 1/0"
+        required: false
+        default: "0"
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -57,6 +65,8 @@ jobs:
           SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           PIN_MID: ${{ inputs.pin_mid }}
           MIDS: ${{ inputs.mids }}
+          MOVIE_ID: ${{ inputs.movie_id }}
+          PIN: ${{ inputs.pin }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LINK_ID: ${{ inputs.link_id }}
           OUT_NAME: ${{ inputs.out_name }}
