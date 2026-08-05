@@ -134,22 +134,32 @@ async def main():
 
     async def session_job(i):
         app = apps[i]
-        # apna chat resolve + message fetch (apna file_reference)
-        # bots get_dialogs nahi kar sakte — sirf get_chat (wo admin hain channel ke)
         try:
             ch = await app.get_chat(int(K2))
-        except Exception:
+        except Exception as e:
+            print(f"   [session {i}] get_chat fail: {str(e)[:60]}")
             ch = None
         if ch is None:
             return None
-        mm = await app.get_messages(ch.id if hasattr(ch, "id") else ch, SRC_MID)
+        try:
+            mm = await app.get_messages(ch.id if hasattr(ch, "id") else ch, SRC_MID)
+        except Exception as e:
+            print(f"   [session {i}] get_messages fail: {str(e)[:60]}")
+            return None
         if mm.empty or not mm.document:
+            print(f"   [session {i}] no doc")
             return None
         wk = 8 if i == 0 else 1
-        got, dt = await download_range(app, mm, ranges[i][0], ranges[i][1], wk, f"s{i}", f"/tmp/mb_part_{i}.bin")
-        return got
+        try:
+            got, dt = await download_range(app, mm, ranges[i][0], ranges[i][1], wk, f"s{i}", f"/tmp/mb_part_{i}.bin")
+            return got
+        except Exception as e:
+            print(f"   [session {i}] download fail: {str(e)[:80]}")
+            return None
 
     results = await asyncio.gather(*[session_job(i) for i in range(n)])
+    for i, r in enumerate(results):
+        print(f"   [session {i}] result: {r if r is None else f'{r/MB:.0f} MB'}")
     # join (sirf un sessions ke parts jo complete hue)
     with open(out2, "wb") as fo:
         for i in range(n):
