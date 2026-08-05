@@ -1,0 +1,38 @@
+name: gogram_test
+on:
+  workflow_dispatch:
+    inputs:
+      msg_id:
+        description: "message id to download"
+        required: true
+        default: "476"
+      pub:
+        description: "public channel username for upload test"
+        required: true
+        default: "udvug23o"
+concurrency:
+  group: run-task
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: deps
+        run: |
+          cd gogram_test
+          go mod init gogramtest 2>/dev/null || true
+          go get github.com/amarnathcjd/gogram@latest
+      - name: run gogram test
+        env:
+          API_ID: ${{ secrets.KEY_16 }}
+          API_HASH: ${{ secrets.KEY_17 }}
+          AUTH_STRING: ${{ secrets.KEY_19 }}
+          CHAT_ID: ${{ secrets.KEY_2 }}
+          MSG_ID: ${{ inputs.msg_id }}
+          PUB: ${{ inputs.pub }}
+        run: cd gogram_test && go run main.go
