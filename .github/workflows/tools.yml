@@ -13,6 +13,10 @@ on:
         description: "poster mid to pin (optional)"
         required: false
         default: ""
+      mids:
+        description: "comma mids to inspect (optional)"
+        required: false
+        default: ""
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -44,5 +48,6 @@ jobs:
           SHOW_ID: ${{ secrets.SHOW_ID }}
           SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           PIN_MID: ${{ inputs.pin_mid }}
+          MIDS: ${{ inputs.mids }}
           LIMIT: ${{ inputs.limit }}
         run: python ${{ inputs.script }}
