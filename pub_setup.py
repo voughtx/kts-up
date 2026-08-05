@@ -20,7 +20,7 @@ async def main():
     me = await app.get_me()
     print(f"[*] as {me.first_name}")
     # channel banao
-    chat = await app.create_channel("K", about="temporary file pool")
+    chat = await app.create_channel("K")
     print(f"[ok] channel created: {chat.id}")
     # username try
     for _ in range(10):
