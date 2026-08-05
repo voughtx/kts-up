@@ -52,8 +52,19 @@ async def main():
     want = m.document.file_size if m.document else 0
     print(f"[*] source: {m.document.file_name} ({want/(1024*1024):.0f} MB)")
     path = "/tmp/vtest.mp4"
-    fp = await m.download(file_name=path)
-    got = os.path.getsize(fp) if fp and os.path.exists(fp) else 0
+    got = 0
+    for att in range(4):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            fp = await m.download(file_name=path)
+            got = os.path.getsize(fp) if fp and os.path.exists(fp) else 0
+            print(f"[*] attempt {att+1}: {got/(1024*1024):.0f} MB")
+            if got >= want * 0.98:
+                break
+        except Exception as e:
+            print(f"[!] attempt {att+1} err: {str(e)[:60]}")
+            got = 0
     print(f"[*] downloaded: {got/(1024*1024):.0f} MB")
     if got < want * 0.98:
         print("[x] download incomplete")
