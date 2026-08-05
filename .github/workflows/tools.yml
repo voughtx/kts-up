@@ -33,6 +33,10 @@ on:
         description: "pin poster? 1/0"
         required: false
         default: "0"
+      link_ids:
+        description: "comma link ids to delete (optional)"
+        required: false
+        default: ""
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -65,6 +69,7 @@ jobs:
           SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           PIN_MID: ${{ inputs.pin_mid }}
           MIDS: ${{ inputs.mids }}
+          LINK_IDS: ${{ inputs.link_ids }}
           MOVIE_ID: ${{ inputs.movie_id }}
           PIN: ${{ inputs.pin }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

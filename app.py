@@ -1301,14 +1301,22 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
         except Exception:
             thumb_path=None
     tmp="/tmp/big.mp4"
-    _p("\n[*] split: large file — downloading...")
-    with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
-        with open(tmp,"wb") as f:
-            while True:
-                c=resp.read(1<<20)
-                if not c:
-                    break
-                f.write(c)
+    _p("\n[*] split: downloading (aria2 parallel x8)...")
+    try:
+        _o.remove(tmp)
+    except Exception:
+        pass
+    _s.run(["aria2c","-x","8","-s","8","-k","4M","-d","/tmp","-o","big.mp4",link],
+           check=False)  # output stream hota hai log mein = live progress
+    if not _o.path.exists(tmp) or _o.path.getsize(tmp)<1000:
+        _p("[!] aria2 fail — urllib fallback")
+        with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
+            with open(tmp,"wb") as f:
+                while True:
+                    c=resp.read(1<<20)
+                    if not c:
+                        break
+                    f.write(c)
     sz=_o.path.getsize(tmp)
     _p(f"   {sz/(1024*1024):.0f} MB")
     outd="/tmp/parts"
@@ -1347,26 +1355,43 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                 _p("[x] channel resolve fail")
                 return []
             results=[]
-            CHUNK=10
             from pyrogram.types import InputMediaDocument
-            for ci in range(0,len(parts),CHUNK):
-                chunk=parts[ci:ci+CHUNK]
+            # FAST: parallel upload (upload_file) + live progress + media group
+            _p(f"[*] uploading {len(parts)} parts (parallel x{min(3,len(parts))})...")
+            sem=_ac.Semaphore(min(3,len(parts)))
+            async def _up_one(idx,p):
+                async with sem:
+                    path=f"{outd}/{p}"
+                    tsz=_o.path.getsize(path)
+                    t0=_t.time()
+                    _last=[0]; _lt=[t0]
+                    def _prog(cur,tot):
+                        now=_t.time()
+                        if now-_lt[0]>=10 and tot>0:
+                            sp=(cur-_last[0])/(now-_lt[0])/(1024*1024)
+                            _p(f"   [up] part {idx+1}/{len(parts)}: {cur/(1024*1024):.0f}/{tot/(1024*1024):.0f} MB ({cur*100//tot}%) | {sp:.1f} MB/s")
+                            _last[0]=cur; _lt[0]=now
+                    fid=await app.upload_file(path,progress=_prog)
+                    _p(f"   [ok] part {idx+1}/{len(parts)} uploaded ({tsz/(1024*1024):.0f} MB)")
+                    return idx,fid
+            ups=await _ac.gather(*[_up_one(i,p) for i,p in enumerate(parts)])
+            ups.sort(key=lambda x:x[0])
+            # media group bhejo (files already uploaded — instant)
+            for ci in range(0,len(ups),10):
+                chunk=ups[ci:ci+10]
                 media=[]
-                for pi,p in enumerate(chunk):
-                    n=ci+pi+1
-                    _p(f"   uploading part {n}/{len(parts)}...")
-                    is_last=(n==len(parts))
-                    media.append(InputMediaDocument(f"{outd}/{p}",
-                                                    thumb=thumb_path,
+                for idx,fid in chunk:
+                    is_last=(idx==len(parts)-1)
+                    media.append(InputMediaDocument(fid,thumb=thumb_path,
                                                     caption=cap if is_last else None,
                                                     parse_mode=_PM.HTML if is_last else None))
                 msgs=await app.send_media_group(ent.id if hasattr(ent,"id") else ent,media)
                 for pi,msg in enumerate(msgs):
-                    fid=""
+                    fid2=""
                     if msg.document:
-                        fid=msg.document.file_id or ""
-                    results.append({"part":ci+pi+1,"fid":fid,"mid":msg.id})
-                _p(f"   block {ci//CHUNK+1} sent ({len(msgs)} parts)")
+                        fid2=msg.document.file_id or ""
+                    results.append({"part":ci+pi+1,"fid":fid2,"mid":msg.id})
+                _p(f"   [ok] block {ci//10+1} sent ({len(msgs)} parts)")
             return results
         except Exception as ex:
             _p(f"[x] media group fail: {str(ex)[:200]}")
