@@ -29,11 +29,14 @@ async def parallel_dl(app, msg, path, workers=8):
     loc = InputDocumentFileLocation(id=fid.media_id, access_hash=fid.access_hash,
                                     file_reference=fid.file_reference or b"", thumb_size="")
     chunk = MB  # 1MB max per GetFile (precise=1)
-    # byte ranges per worker
+    # byte ranges per worker — 1MB-aligned boundaries (offset 4096 multiple zaroori)
+    per = (size // workers) // MB * MB
+    if per < MB:
+        per = MB
     ranges = []
     start = 0
     for i in range(workers):
-        end = size if i == workers - 1 else start + size // workers
+        end = size if i == workers - 1 else start + per
         ranges.append((start, end))
         start = end
     t0 = time.time()
