@@ -71,7 +71,7 @@ jobs:
           restore-keys: |
             pip-tools-${{ runner.os }}-
       - name: deps
-        run: pip install -q pymongo[srv] pyrogram TgCrypto || true
+        run: pip install -q pymongo[srv] pyrogram TgCrypto telethon || true
       - name: run tool
         env:
           KEY_1: ${{ secrets.KEY_1 }}
