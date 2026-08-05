@@ -58,7 +58,7 @@ def main():
     import asyncio
 
     async def run():
-        from pyrogram import Client
+        from pyrogram import Client, enums
         import asyncio
 
         app = Client("fixsess", session_string=PSESS, api_id=int(AID) if AID else None,
@@ -91,7 +91,7 @@ def main():
                 continue
             cap = build_caption(d)
             try:
-                await app.edit_message_caption(chat.id, int(mid), cap, parse_mode="html")
+                await app.edit_message_caption(chat.id, int(mid), cap, parse_mode=enums.ParseMode.HTML)
                 okc += 1
             except Exception as e:
                 failc += 1
