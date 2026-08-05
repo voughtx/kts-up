@@ -14,11 +14,15 @@ AHASH = os.environ.get("KEY_17", "").strip()
 SRC_MID = int(os.environ.get("MIDS", "476").split(",")[0])
 BOT_TOKENS = [os.environ.get(f"KEY_{i}", "").strip() for i in range(22, 28)]
 BOT_TOKENS = [t for t in BOT_TOKENS if t]
+BOT_SS = [os.environ.get(f"KEY_{i}", "").strip() for i in range(32, 38)]
+BOT_SS = [s for s in BOT_SS if s]
 MB = 1024 * 1024
 
-async def make_client(name, bot_token=None):
+async def make_client(name, bot_token=None, ss=None):
     if bot_token:
         c = Client(name, api_id=int(AID), api_hash=AHASH, bot_token=bot_token, no_updates=True)
+    elif ss:
+        c = Client(name, api_id=int(AID), api_hash=AHASH, session_string=ss, no_updates=True)
     else:
         c = Client(name, api_id=int(AID), api_hash=AHASH, session_string=PSESS, no_updates=True)
     await c.start()
@@ -94,7 +98,8 @@ async def main():
     apps = []
     apps.append(await make_client("user"))
     for i, t in enumerate(BOT_TOKENS):
-        apps.append(await make_client(f"bot{i+1}", bot_token=t))
+        s = BOT_SS[i] if i < len(BOT_SS) else None
+        apps.append(await make_client(f"bot{i+1}", bot_token=t if not s else None, ss=s))
     # source message (user se)
     chat = await resolve_chat(apps[0])
     if chat is None:
