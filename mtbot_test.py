@@ -145,7 +145,7 @@ async def main():
         mm = await app.get_messages(ch.id if hasattr(ch, "id") else ch, SRC_MID)
         if mm.empty or not mm.document:
             return None
-        wk = 8 if i == 0 else 2
+        wk = 8 if i == 0 else 1
         got, dt = await download_range(app, mm, ranges[i][0], ranges[i][1], wk, f"s{i}", f"/tmp/mb_part_{i}.bin")
         return got
 
