@@ -27,6 +27,25 @@ def main():
         print("[x] MIDS required")
         raise SystemExit(1)
 
+    async def download_one(app, chat, mid, dest):
+        m = await app.get_messages(chat, mid)
+        if m.empty or not m.document:
+            return None, f"mid {mid} empty/not doc"
+        want = m.document.file_size or 0
+        print(f"[*] downloading {m.document.file_name} ({want/(1024*1024):.0f} MB)...")
+        for att in range(3):
+            try:
+                if os.path.exists(dest):
+                    os.remove(dest)
+                fp = await m.download(file_name=dest)
+                got = os.path.getsize(fp) if fp and os.path.exists(fp) else 0
+                print(f"    attempt {att+1}: {got/(1024*1024):.0f} MB")
+                if got >= want * 0.98:
+                    return dest, None
+            except Exception as e:
+                print(f"    attempt {att+1} err: {str(e)[:80]}")
+        return None, f"mid {mid} incomplete"
+
     async def run_async():
         app = Client("joinsess", session_string=PSESS, api_id=int(AID) if AID else None,
                      api_hash=AHASH or None, no_updates=True)
@@ -43,36 +62,25 @@ def main():
             print("[x] chat fail")
             await app.stop()
             return
+        cid = chat.id if hasattr(chat, "id") else chat
         outd = "/tmp/join"
         os.makedirs(outd, exist_ok=True)
-        paths = []
+        # PARALLEL download (gather) — sab parts ek saath, retry + size verify
+        tasks = []
         for i, mid in enumerate(MIDS):
-            m = await app.get_messages(chat.id, mid)
-            if m.empty or not m.document:
-                print(f"[x] mid {mid} empty/not doc")
-                continue
-            want = m.document.file_size or 0
             dest = os.path.join(outd, f"part_{i:03d}")
-            print(f"[*] downloading {m.document.file_name} ({want/(1024*1024):.0f} MB)...")
-            got = 0
-            for att in range(3):
-                try:
-                    if os.path.exists(dest):
-                        os.remove(dest)
-                    fp = await m.download(file_name=dest)
-                    got = os.path.getsize(fp) if fp and os.path.exists(fp) else 0
-                    print(f"    attempt {att+1}: {got/(1024*1024):.0f} MB")
-                    if got >= want * 0.98:
-                        break
-                except Exception as e:
-                    print(f"    attempt {att+1} err: {str(e)[:80]}")
-                    got = 0
-            if got < want * 0.98:
-                print(f"[x] download incomplete ({got/(1024*1024):.0f}/{want/(1024*1024):.0f} MB)")
-                continue
-            paths.append(dest)
+            tasks.append(download_one(app, cid, mid, dest))
+        res = await asyncio.gather(*tasks)
+        paths = []
+        ok_all = True
+        for r, err in res:
+            if err or not r:
+                print(f"[x] {err}")
+                ok_all = False
+            else:
+                paths.append(r)
         await app.stop()
-        if len(paths) != len(MIDS):
+        if not ok_all or len(paths) != len(MIDS):
             print("[x] download incomplete")
             return
         # byte-join (cat) — NO encoding
