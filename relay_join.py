@@ -51,11 +51,26 @@ def main():
             if m.empty or not m.document:
                 print(f"[x] mid {mid} empty/not doc")
                 continue
+            want = m.document.file_size or 0
             dest = os.path.join(outd, f"part_{i:03d}")
-            print(f"[*] downloading {m.document.file_name} ({m.document.file_size/(1024*1024):.0f} MB)...")
-            fp = await m.download(file_name=dest)
-            print(f"    -> {fp} ({os.path.getsize(fp)/(1024*1024):.0f} MB)")
-            paths.append(fp)
+            print(f"[*] downloading {m.document.file_name} ({want/(1024*1024):.0f} MB)...")
+            got = 0
+            for att in range(3):
+                try:
+                    if os.path.exists(dest):
+                        os.remove(dest)
+                    fp = await m.download(file_name=dest)
+                    got = os.path.getsize(fp) if fp and os.path.exists(fp) else 0
+                    print(f"    attempt {att+1}: {got/(1024*1024):.0f} MB")
+                    if got >= want * 0.98:
+                        break
+                except Exception as e:
+                    print(f"    attempt {att+1} err: {str(e)[:80]}")
+                    got = 0
+            if got < want * 0.98:
+                print(f"[x] download incomplete ({got/(1024*1024):.0f}/{want/(1024*1024):.0f} MB)")
+                continue
+            paths.append(dest)
         await app.stop()
         if len(paths) != len(MIDS):
             print("[x] download incomplete")
