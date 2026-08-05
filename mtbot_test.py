@@ -56,8 +56,16 @@ async def download_range(app, msg, r0, r1, workers, tag, out_path):
         off = a
         with open(path_w, "wb") as f:
             while off < b:
-                res = await app.invoke(GetFile(location=loc, offset=off, limit=chunk,
-                                               precise=1, cdn_supported=True))
+                try:
+                    res = await app.invoke(GetFile(location=loc, offset=off, limit=chunk,
+                                                   precise=1, cdn_supported=True))
+                except Exception as e:
+                    from pyrogram.errors import FloodWait
+                    if isinstance(e, FloodWait):
+                        print(f"   [{tag}w{i}] flood {e.value}s — wait...")
+                        await asyncio.sleep(e.value)
+                        continue
+                    raise
                 data = res.bytes
                 if not data:
                     break
@@ -137,7 +145,8 @@ async def main():
         mm = await app.get_messages(ch.id if hasattr(ch, "id") else ch, SRC_MID)
         if mm.empty or not mm.document:
             return None
-        got, dt = await download_range(app, mm, ranges[i][0], ranges[i][1], 4, f"s{i}", f"/tmp/mb_part_{i}.bin")
+        wk = 8 if i == 0 else 2
+        got, dt = await download_range(app, mm, ranges[i][0], ranges[i][1], wk, f"s{i}", f"/tmp/mb_part_{i}.bin")
         return got
 
     results = await asyncio.gather(*[session_job(i) for i in range(n)])
