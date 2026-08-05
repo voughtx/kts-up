@@ -24,11 +24,10 @@ async def parallel_dl(app, msg, path, workers=8):
     size = doc.file_size
     from pyrogram.raw.functions.upload import GetFile
     from pyrogram.raw.types import InputDocumentFileLocation
-    from pyrogram.utils import decode_file_id, decode_file_ref
-    fid = decode_file_id(doc.file_id)
-    fref = decode_file_ref(doc.file_ref)
-    loc = InputDocumentFileLocation(id=fid.id, access_hash=fid.access_hash,
-                                    file_reference=fref, thumb_size="")
+    from pyrogram.utils import FileId
+    fid = FileId.decode(doc.file_id)
+    loc = InputDocumentFileLocation(id=fid.media_id, access_hash=fid.access_hash,
+                                    file_reference=fid.file_reference or b"", thumb_size="")
     chunk = MB  # 1MB max per GetFile (precise=1)
     # byte ranges per worker
     ranges = []
