@@ -32,6 +32,10 @@ on:
         description: "hindi_only / all"
         required: false
         default: "hindi_only"
+      split_part_mb:
+        description: "split part size MB (test override)"
+        required: false
+        default: ""
   repository_dispatch:
     types: [run-task, relay-task]
 concurrency:
@@ -83,6 +87,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
           NO_FALLBACK: ${{ inputs.no_fallback }}
           CONCURRENCY: ${{ secrets.CONCURRENCY }}
+          SPLIT_PART_MB: ${{ inputs.split_part_mb }}
           MODE: ${{ inputs.mode }}
           LANG_MODE: ${{ inputs.lang_mode }}
           PRIORITY: ${{ secrets.PRIORITY }}

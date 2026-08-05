@@ -223,6 +223,7 @@ try:
 except Exception:
     _CC=100
 _SPLIT=int(_o.environ.get("SPLIT_MB","1700"))*1024*1024
+_SPLITPART=int(_o.environ.get("SPLIT_PART_MB","1900"))*1024*1024
 _DRY=_o.environ.get("DRY_RUN","").lower() in ("1","true","yes")
 _ITEM=_o.environ.get("ITEM_ID","").strip()
 _QUAL=_o.environ.get("QUALITY","").strip() or "best"
@@ -1214,9 +1215,9 @@ def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
         return _ac.get_event_loop().run_until_complete(_do())
 
 def _split_media_group(link,base,cap,thumb,name="video.mp4"):
-    """Badi file (>1.7GB) ko split karke media-group me upload karo.
-    ≤10 parts ek block; >10 do blocks; caption sirf last part par.
-    Returns: list of {part, fid, mid} ya []"""
+    """Badi file ko TRUE byte-split karke media-group me upload karo (NO encoding).
+    Parts: {filename}.001, .002 ... (jaise 7-Zip/RAR volumes) — player inhe join karta hai.
+    Caption sirf last part par. Returns: list of {part, fid, mid} ya []"""
     if not (_HAS_PY and _KID and _KHASH and _PSESS):
         return []
     tmp="/tmp/big.mp4"
@@ -1228,7 +1229,8 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                 if not c:
                     break
                 f.write(c)
-    _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
+    sz=_o.path.getsize(tmp)
+    _p(f"   {sz/(1024*1024):.0f} MB")
     outd="/tmp/parts"
     _o.makedirs(outd,exist_ok=True)
     for x in _o.listdir(outd):
@@ -1236,14 +1238,15 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
             _o.remove(outd+"/"+x)
         except Exception:
             pass
-    _s.run(["ffmpeg","-y","-i",tmp,"-c","copy","-map","0",
-            "-f","segment","-segment_time","1700","-reset_timestamps","1",
-            f"{outd}/part_%03d.mp4"],check=False,capture_output=True)
+    fname=(name or "video.mp4").replace("/","_")
+    prefix=f"{outd}/{fname}."
+    _s.run(["split","-b",str(_SPLITPART),"-d","-a","3","--numeric-suffixes=1",tmp,prefix],
+           check=False,capture_output=True)
     parts=sorted(_o.listdir(outd))
     if not parts:
         _p("[x] split fail — no parts")
         return []
-    _p(f"   {len(parts)} parts")
+    _p(f"   {len(parts)} parts ({fname}.001 ...)")
     async def _do():
         app=_Pyro(":memory:",api_id=int(_KID),api_hash=_KHASH,
                   session_string=_PSESS,max_concurrent_transmissions=_CC)
@@ -1265,22 +1268,15 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                 return []
             results=[]
             CHUNK=10
+            from pyrogram.types import InputMediaDocument
             for ci in range(0,len(parts),CHUNK):
                 chunk=parts[ci:ci+CHUNK]
-                from pyrogram.types import InputMediaDocument
                 media=[]
                 for pi,p in enumerate(chunk):
-                    fpath=f"{outd}/{p}"
-                    fname_p=f"{base}.{ci+pi+1:03d}.mp4"
-                    _p(f"   uploading part {ci+pi+1}/{len(parts)}...")
-                    npath=f"{outd}/{fname_p}"
-                    if fpath!=npath:
-                        try:
-                            _o.replace(fpath,npath)
-                        except Exception:
-                            pass
-                    is_last=(ci+pi+1==len(parts))
-                    media.append(InputMediaDocument(npath,
+                    n=ci+pi+1
+                    _p(f"   uploading part {n}/{len(parts)}...")
+                    is_last=(n==len(parts))
+                    media.append(InputMediaDocument(f"{outd}/{p}",
                                                     caption=cap if is_last else None,
                                                     parse_mode=_PM.HTML if is_last else None))
                 msgs=await app.send_media_group(ent.id if hasattr(ent,"id") else ent,media)
