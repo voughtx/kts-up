@@ -45,6 +45,10 @@ on:
         description: "link expiry hours"
         required: false
         default: "24"
+      workers:
+        description: "parallel download workers"
+        required: false
+        default: "8"
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -84,6 +88,7 @@ jobs:
           SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           PIN_MID: ${{ inputs.pin_mid }}
           MIDS: ${{ inputs.mids }}
+          WORKERS: ${{ inputs.workers }}
           LINK_IDS: ${{ inputs.link_ids }}
           PUB: ${{ inputs.pub }}
           EXP_H: ${{ inputs.exp_h }}
