@@ -109,6 +109,7 @@ async def main():
     os.remove(out1)
 
     # 2. MULTI-BOT (har session apna range, 4 workers each) — MB-aligned ranges
+    # HAR SESSION apne se message fetch karta hai (apna file_reference chahiye)
     n = len(apps)
     out2 = "/tmp/mb_multi.bin"
     if os.path.exists(out2): os.remove(out2)
@@ -122,14 +123,33 @@ async def main():
         end = want if i == n - 1 else start + per
         ranges.append((start, end))
         start = end
-    results = await asyncio.gather(*[
-        download_range(apps[i], m, ranges[i][0], ranges[i][1], 4, f"s{i}", f"/tmp/mb_part_{i}.bin")
-        for i in range(n)
-    ])
-    # join
+
+    async def session_job(i):
+        app = apps[i]
+        # apna chat resolve + message fetch (apna file_reference)
+        try:
+            ch = await app.get_chat(int(K2))
+        except Exception:
+            ch = None
+            async for d in app.get_dialogs():
+                if d.chat and d.chat.id == int(K2):
+                    ch = d.chat
+                    break
+        if ch is None:
+            return None
+        mm = await app.get_messages(ch.id if hasattr(ch, "id") else ch, SRC_MID)
+        if mm.empty or not mm.document:
+            return None
+        got, dt = await download_range(app, mm, ranges[i][0], ranges[i][1], 4, f"s{i}", f"/tmp/mb_part_{i}.bin")
+        return got
+
+    results = await asyncio.gather(*[session_job(i) for i in range(n)])
+    # join (sirf un sessions ke parts jo complete hue)
     with open(out2, "wb") as fo:
         for i in range(n):
             p = f"/tmp/mb_part_{i}.bin"
+            if not os.path.exists(p):
+                continue
             with open(p, "rb") as fi:
                 while True:
                     c = fi.read(MB)
