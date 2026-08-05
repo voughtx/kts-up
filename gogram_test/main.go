@@ -1,9 +1,11 @@
 // gogram_test — ISOLATED speed test (main system se alag)
 // Download + upload timing via gogram (Go Pyrogram port)
+// KEY_19 (Pyrogram session) ko decode karke use karta hai (official example se)
 package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +16,35 @@ import (
 )
 
 func now() float64 { return float64(time.Now().UnixMilli()) / 1000.0 }
+
+// decodePyrogramSessionString — Pyrogram string session -> gogram Session
+// (official example: gogram/examples/sessions/pyrogram/main.go)
+func decodePyrogramSessionString(encodedString string) (*telegram.Session, error) {
+	const (
+		dcIDSize     = 1 // uint8
+		apiIDSize    = 4 // uint32
+		testModeSize = 1 // bool (uint8)
+		authKeySize  = 256
+		userIDSize   = 8 // uint64
+		isBotSize    = 1 // bool (uint8)
+	)
+	for len(encodedString)%4 != 0 {
+		encodedString += "="
+	}
+	packedData, err := base64.URLEncoding.DecodeString(encodedString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode base64 string: %w", err)
+	}
+	expectedSize := dcIDSize + apiIDSize + testModeSize + authKeySize + userIDSize + isBotSize
+	if len(packedData) != expectedSize {
+		return nil, fmt.Errorf("unexpected data length: got %d, want %d", len(packedData), expectedSize)
+	}
+	return &telegram.Session{
+		Hostname: telegram.ResolveDataCenterIP(int(uint8(packedData[0])), packedData[5] != 0, false),
+		AppID:    int32(uint32(packedData[1])<<24 | uint32(packedData[2])<<16 | uint32(packedData[3])<<8 | uint32(packedData[4])),
+		Key:      packedData[6 : 6+authKeySize],
+	}, nil
+}
 
 func main() {
 	apiIDStr := os.Getenv("API_ID")
@@ -30,10 +61,14 @@ func main() {
 	chatID, _ := strconv.ParseInt(chatIDStr, 10, 64)
 	msgID, _ := strconv.ParseInt(msgIDStr, 10, 32)
 
+	// decode Pyrogram session
+	sess, err := decodePyrogramSessionString(authString)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "decode session:", err)
+		os.Exit(1)
+	}
 	client, err := telegram.NewClient(telegram.ClientConfig{
-		AppID:         int32(apiID64),
-		AppHash:       apiHash,
-		StringSession: authString,
+		StringSession: sess.Encode(),
 		MemorySession: true,
 		DisableCache:  true,
 	})
@@ -64,7 +99,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "no document")
 		os.Exit(1)
 	}
-	fmt.Printf("[*] file size: %d MB\n", doc.Size/1024/1024)
+	mb := float64(doc.Size) / 1024 / 1024
+	fmt.Printf("[*] file size: %.0f MB\n", mb)
 	buf := bytes.NewBuffer(make([]byte, 0, doc.Size))
 	t0 := now()
 	if _, err := message.Download(&telegram.DownloadOptions{Buffer: buf}); err != nil {
@@ -73,7 +109,7 @@ func main() {
 	}
 	t1 := now()
 	dlt := t1 - t0
-	fmt.Printf("[download] %d MB in %.1fs = %.2f MB/s\n", doc.Size/1024/1024, dlt, float64(doc.Size)/1024/1024/dlt)
+	fmt.Printf("[download] %.0f MB in %.1fs = %.2f MB/s\n", mb, dlt, mb/dlt)
 
 	// upload to pub channel
 	target, err := client.ResolvePeer(pubStr)
@@ -91,7 +127,7 @@ func main() {
 	}
 	t3 := now()
 	ult := t3 - t2
-	fmt.Printf("[upload] %d MB in %.1fs = %.2f MB/s\n", doc.Size/1024/1024, ult, float64(doc.Size)/1024/1024/ult)
+	fmt.Printf("[upload] %.0f MB in %.1fs = %.2f MB/s\n", mb, ult, mb/ult)
 	if _, err := client.MessagesSendMedia(&telegram.MessagesSendMediaParams{
 		Peer: target,
 		Media: &telegram.InputMediaUploadedDocument{
@@ -106,5 +142,5 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Send:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("[done] download %.2f MB/s | upload %.2f MB/s\n", float64(doc.Size)/1024/1024/dlt, float64(doc.Size)/1024/1024/ult)
+	fmt.Printf("[done] download %.2f MB/s | upload %.2f MB/s\n", mb/dlt, mb/ult)
 }
