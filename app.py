@@ -1270,7 +1270,7 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                     media.append(InputMediaDocument(npath,
                                                     caption=cap if is_last else None,
                                                     parse_mode="HTML" if is_last else None))
-                msgs=await app.send_media_group(ent,media)
+                msgs=await app.send_media_group(ent.id if hasattr(ent,"id") else ent,media)
                 for pi,msg in enumerate(msgs):
                     fid=""
                     if msg.document:
