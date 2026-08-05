@@ -47,7 +47,7 @@ async def parallel_dl(app, msg, path, workers=8):
             while off < r1:
                 lim = min(chunk, r1 - off)
                 res = await app.invoke(GetFile(location=loc, offset=off, limit=lim,
-                                               precise=1, cdn_support=True))
+                                               precise=1, cdn_supported=True))
                 data = res.bytes
                 if not data:
                     break
