@@ -27,23 +27,87 @@ def main():
         print("[x] MIDS required")
         raise SystemExit(1)
 
+    async def parallel_dl(app, msg, dest, workers=8):
+        """MTProto raw GetFile — byte-ranges split + N workers parallel download"""
+        doc = msg.document
+        size = doc.file_size
+        MB = 1024 * 1024
+        from pyrogram.raw.functions.upload import GetFile
+        from pyrogram.raw.types import InputDocumentFileLocation
+        from pyrogram.utils import FileId
+        fid = FileId.decode(doc.file_id)
+        loc = InputDocumentFileLocation(id=fid.media_id, access_hash=fid.access_hash,
+                                        file_reference=fid.file_reference or b"", thumb_size="")
+        chunk = MB
+        per = (size // workers) // MB * MB
+        if per < MB:
+            per = MB
+        ranges = []
+        start = 0
+        for i in range(workers):
+            end = size if i == workers - 1 else start + per
+            ranges.append((start, end))
+            start = end
+        t0 = time.time()
+
+        async def worker(i, r0, r1):
+            path_w = f"/tmp/rj_w{i}.bin"
+            off = r0
+            got_w = 0
+            with open(path_w, "wb") as f:
+                while off < r1:
+                    res = await app.invoke(GetFile(location=loc, offset=off, limit=chunk,
+                                                   precise=1, cdn_supported=True))
+                    data = res.bytes
+                    if not data:
+                        break
+                    w = min(len(data), r1 - off)
+                    f.write(data[:w])
+                    off += w
+                    got_w += w
+                    if time.time() - t0 >= 30:
+                        print(f"   [w{i}] {got_w/MB:.0f} MB | ~{got_w/(time.time()-t0)/MB:.1f} MB/s")
+            return path_w
+
+        paths = await asyncio.gather(*[worker(i, r0, r1) for i, (r0, r1) in enumerate(ranges)])
+        dt = time.time() - t0
+        with open(dest, "wb") as fo:
+            for p in paths:
+                with open(p, "rb") as fi:
+                    while True:
+                        c = fi.read(MB)
+                        if not c:
+                            break
+                        fo.write(c)
+                os.remove(p)
+        return os.path.getsize(dest), dt
+
     async def download_one(app, chat, mid, dest):
         m = await app.get_messages(chat, mid)
         if m.empty or not m.document:
             return None, f"mid {mid} empty/not doc"
         want = m.document.file_size or 0
-        print(f"[*] downloading {m.document.file_name} ({want/(1024*1024):.0f} MB)...")
-        for att in range(3):
+        print(f"[*] downloading {m.document.file_name} ({want/(1024*1024):.0f} MB) PARALLEL x8...")
+        try:
+            if os.path.exists(dest):
+                os.remove(dest)
+            got, dt = await parallel_dl(app, m, dest, 8)
+            print(f"    done: {got/(1024*1024):.0f} MB in {dt:.0f}s ({got/dt/MB:.1f} MB/s)")
+            if got >= want * 0.98:
+                return dest, None
+        except Exception as e:
+            print(f"    parallel err: {str(e)[:100]}")
+            # fallback: normal download
             try:
                 if os.path.exists(dest):
                     os.remove(dest)
                 fp = await m.download(file_name=dest)
                 got = os.path.getsize(fp) if fp and os.path.exists(fp) else 0
-                print(f"    attempt {att+1}: {got/(1024*1024):.0f} MB")
+                print(f"    fallback: {got/(1024*1024):.0f} MB")
                 if got >= want * 0.98:
                     return dest, None
-            except Exception as e:
-                print(f"    attempt {att+1} err: {str(e)[:80]}")
+            except Exception as e2:
+                print(f"    fallback err: {str(e2)[:80]}")
         return None, f"mid {mid} incomplete"
 
     async def run_async():
