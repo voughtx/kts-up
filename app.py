@@ -513,6 +513,87 @@ def _relay_cleanup_old():
     except Exception as ex:
         _p(f"[!] cleanup fail: {str(ex)[:60]}")
 
+def _store_has_show(show_title):
+    """Kya is show ka koi episode pehle se done hai?"""
+    if not show_title:
+        return True
+    if _store.mongo is not None:
+        try:
+            return _store.db.episodes.count_documents({"show": show_title}) > 0
+        except Exception:
+            pass
+    return True
+
+def _show_poster(pick):
+    """Naye show ka poster channel me bhejo + pin (dashboard/directory ke liye)."""
+    if not (_HAS_PY and _KID and _KHASH and _PSESS):
+        return
+    show=pick.get("show") or {}
+    title=show.get("title") or pick.get("meta",{}).get("show_title","")
+    img=show.get("image") or ""
+    seasons=pick.get("seasons") or []
+    tot_eps=0
+    for s in seasons:
+        try:
+            eps=_eps(show.get("_id",""),s.get("_id",""))
+            tot_eps+=len(eps)
+        except Exception:
+            pass
+    n_seasons=len([s for s in seasons if (s.get("seasonNumber") or 0)!=0]) or len(seasons)
+    if not img:
+        _p("[!] poster: no image")
+        return
+    _p(f"[*] poster: {title} (S{n_seasons} | Ep{tot_eps})")
+    tmp="/tmp/poster.jpg"
+    try:
+        with _q.urlopen(_q.Request(img,headers={"User-Agent":_UA}),timeout=60) as resp:
+            with open(tmp,"wb") as f:
+                f.write(resp.read())
+    except Exception as ex:
+        _p(f"[!] poster download fail: {str(ex)[:80]}")
+        return
+    cap=f"<b>{_esc(title)}</b>\nTotal S{n_seasons} | Ep{tot_eps}"
+    async def _do():
+        app=_Pyro(":memory:",api_id=int(_KID),api_hash=_KHASH,session_string=_PSESS,
+                  max_concurrent_transmissions=_CC)
+        try:
+            await app.start()
+            ent=None
+            try:
+                ent=await app.get_chat(int(K2))
+            except Exception:
+                async for d in app.get_dialogs():
+                    if d.chat and d.chat.id==int(K2):
+                        ent=d.chat
+                        break
+            if ent is None:
+                return
+            msg=await app.send_photo(ent,tmp,caption=cap,parse_mode=_PM.HTML)
+            try:
+                await app.pin_chat_message(ent.id,msg.id)
+            except Exception:
+                pass
+            _p("[ok] poster sent + pinned")
+        except Exception as ex:
+            _p(f"[!] poster fail: {str(ex)[:80]}")
+        finally:
+            try:
+                await app.stop()
+            except Exception:
+                pass
+    try:
+        _ac.get_event_loop().run_until_complete(_do())
+    except RuntimeError:
+        import nest_asyncio
+        try:
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        try:
+            _ac.get_event_loop().run_until_complete(_do())
+        except Exception:
+            pass
+
 def _relay_episode(ep_id):
     """Dashboard 'Get Link' → TG se download → public link (GitHub Release/litterbox).
     Link + expiry Supabase me save. Split parts merge hokar ek file."""
@@ -1263,18 +1344,37 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     if q:
         lines.append(f"\u2699\uFE0F Quality: <b>{_esc(q)}</b>")
     lines.append(f"\U0001F4AC Language: <b>{_esc(meta.get('lang') or 'Hindi')}</b>")
+    sz=""
     if size:
         mb=size/(1024*1024)
         if mb>=1024:
-            lines.append(f"\U0001F4C2 Size: <b>{int(round(mb/1024))} GB</b>")
+            sz=f"{int(round(mb/1024))} GB"
         else:
-            lines.append(f"\U0001F4C2 Size: <b>{int(round(mb))} MB</b>")
+            sz=f"{int(round(mb))} MB"
     if duration:
-        lines.append(f"\U0001F4FC Duration: <b>{int(duration)} Min</b>")
+        if sz:
+            sz=f"{sz} \u2022 {int(duration)} min"
+        else:
+            sz=f"{int(duration)} min"
+    if sz:
+        lines.append(f"\U0001F4C2 Size: <b>{sz}</b>")
     tlab="Movie" if (meta.get("type") or "").startswith("movie") else "Show"
     clab=meta.get("category") or ""
     lines.append(f"\U0001F5F3\uFE0F Category: <b>{_esc(tlab)} \u2022 {_esc(clab)}</b>")
     lines.append(_SEP)
+    tgt=""
+    if web:
+        dom=web.split("//")[-1].split("/")[0]
+        lab=dom.split(".")[0].capitalize() if "." in dom else dom
+        tgt=f"<b><a href=\"{_esc(web)}\">{_esc(lab)}</a></b>"
+    elif target:
+        tgt=f"<b>{_esc(target)}</b>"
+    if tgt and thumb_url:
+        lines.append(f"\U0001F3AF {tgt} | <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
+    elif tgt:
+        lines.append(f"\U0001F3AF {tgt}")
+    elif thumb_url:
+        lines.append(f"\U0001F3AF <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
     return "\n".join(lines)
 def _split_send(link,base,cap,thumb):
     tmp="/tmp/big.mp4"
@@ -1361,10 +1461,17 @@ def main():
         _y.exit(0)
     eid=pick["id"]
     meta=pick["meta"]
+    is_mv=eid.startswith("movie:")
+    # naya show start ho raha hai? (us show ka koi episode abhi tak done nahi)
+    if not is_mv:
+        try:
+            if not _store_has_show(meta.get("show_title","")):
+                _show_poster(pick)
+        except Exception:
+            pass
     se_tag=""
     if meta.get("season") is not None and meta.get("episode") is not None:
         se_tag=f" S{meta['season']}E{meta['episode']}"
-    is_mv=eid.startswith("movie:")
     web=f"{_WEB}movieId={eid[6:]}" if is_mv else f"{_WEB}episodeId={eid}"
     _p(f"\n> next: {meta.get('show_title','')} {se_tag.strip()} — {meta.get('title')}")
     _p(f"   id: {eid}")
