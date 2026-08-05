@@ -24,13 +24,16 @@ jobs:
         with:
           python-version: "3.12"
       - name: deps
-        run: pip install -q pymongo[srv] || true
+        run: pip install -q pymongo[srv] pyrogram TgCrypto || true
       - name: run tool
         env:
           KEY_1: ${{ secrets.KEY_1 }}
           KEY_2: ${{ secrets.KEY_2 }}
           KEY_7: ${{ secrets.KEY_7 }}
           KEY_13: ${{ secrets.KEY_13 }}
+          KEY_16: ${{ secrets.KEY_16 }}
+          KEY_17: ${{ secrets.KEY_17 }}
+          KEY_19: ${{ secrets.KEY_19 }}
           KEY_20: ${{ secrets.KEY_20 }}
           KEY_21: ${{ secrets.KEY_21 }}
           LIMIT: ${{ inputs.limit }}
