@@ -74,6 +74,74 @@ async function ghRunActive(env) {
   return (d.total_count || 0) > 0;
 }
 
+// Janitor helpers: commits backup + rolling prune (500 max, size watchdog 10MB)
+async function sbDeleteRow(env, id) {
+  try {
+    const r = await fetch(`${env.SB_URL}/rest/v1/progress?id=eq.${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { apikey: env.SB_KEY, Authorization: `Bearer ${env.SB_KEY}`, "User-Agent": "kts-worker" },
+    });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
+async function ghSaveCommits(env) {
+  if (!env.GH_TOKEN || !env.GH_REPO) return 0;
+  try {
+    const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/commits?per_page=100`, {
+      headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "kts-worker" },
+    });
+    if (!r.ok) return 0;
+    const d = await r.json();
+    let saved = 0;
+    for (const c of d || []) {
+      const ca = (c.commit && c.commit.author) || {};
+      const row = {
+        id: `commit_${String(c.sha || "").slice(0, 12)}`,
+        state: {
+          sha: String(c.sha || "").slice(0, 12),
+          msg: String((c.commit && c.commit.message) || "").slice(0, 200),
+          author: String(ca.name || ""),
+          at: Math.floor(new Date(ca.date || Date.now()).getTime() / 1000),
+        },
+      };
+      if (await sbPostRow(env, row)) saved++;
+    }
+    return saved;
+  } catch (e) { return 0; }
+}
+
+async function sbPruneCount(env, prefix, max) {
+  try {
+    const docs = await sbGet(env, "progress", `select=id,state&id=like.${prefix}%25&limit=2000`);
+    if (!docs) return 0;
+    docs.sort((a, b) => ((a.state && a.state.at) || 0) - ((b.state && b.state.at) || 0));
+    let del = 0;
+    while (docs.length > max) {
+      const old = docs.shift();
+      if (await sbDeleteRow(env, old.id)) del++;
+    }
+    return del;
+  } catch (e) { return 0; }
+}
+
+async function sbPruneSize(env, maxBytes) {
+  try {
+    const docs = await sbGet(env, "progress", "select=id,state&id=like.log%25&limit=2000");
+    if (!docs) return 0;
+    let total = 0;
+    for (const d of docs) total += String((d.state && d.state.log) || "").length;
+    docs.sort((a, b) => ((a.state && a.state.at) || 0) - ((b.state && b.state.at) || 0));
+    let del = 0;
+    while (total > maxBytes && docs.length) {
+      const old = docs.shift();
+      total -= String((old.state && old.state.log) || "").length;
+      if (await sbDeleteRow(env, old.id)) del++;
+    }
+    return del;
+  } catch (e) { return 0; }
+}
+
 async function ghSaveRunLog(env, w) {
   if (!env.SB_URL || !env.SB_KEY || !env.GH_TOKEN || !env.GH_REPO) return false;
   try {
@@ -340,6 +408,18 @@ export default {
         } catch (e) {
           dbg.err = String(e).slice(0, 120);
         }
+        // fallback: /auth/me Bearer 200 = login token valid (links par security flag ho to)
+        if (!ok) {
+          try {
+            const a = await fetch(atob("aHR0cHM6Ly9hcGkua2FydG9vbnMubWUvYXBpL2F1dGgvbWU="), {
+              headers: { "Authorization": `Bearer ${tk}`, "User-Agent": "kts-worker", "Origin": atob("aHR0cHM6Ly9rYXJ0b29ucy5tZQ=="), "Referer": atob("aHR0cHM6Ly9rYXJ0b29ucy5tZQ==") + "/" },
+            });
+            dbg.auth = a.status;
+            ok = a.status === 200;
+          } catch (e) {
+            dbg.autherr = String(e).slice(0, 80);
+          }
+        }
         if (!ok) return json({ ok: false, err: "invalid token — rejected", dbg }, 400);
         if (!ok) return json({ ok: false, err: "invalid token — rejected" }, 400);
         if (!env.SB_URL || !env.SB_KEY) return json({ ok: false, err: "sb not configured" }, 500);
@@ -384,18 +464,31 @@ export default {
 
     if (url.pathname === "/api/runlogs") {
       if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
-      const docs = await sbGet(env, "progress", "select=state&id=like.log%25&limit=300");
+      const docs = await sbGet(env, "progress", "select=state&id=like.log%25&limit=500");
       if (docs === null) return json({ error: "sb fail" }, 500);
       const list = (docs || [])
         .map((d) => d.state || {})
         .sort((a, b) => (b.at || 0) - (a.at || 0))
-        .slice(0, 50)
+        .slice(0, 100)
         .map((s) => ({
           run_id: s.run_id || "",
           result: s.result || "?",
           at: s.at || 0,
           preview: (s.log || "").slice(0, 150),
         }));
+      return json(list);
+    }
+
+    // /api/commits (admin) — saved commit backups
+    if (url.pathname === "/api/commits") {
+      if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      const docs = await sbGet(env, "progress", "select=state&id=like.commit%25&limit=500");
+      if (docs === null) return json({ error: "sb fail" }, 500);
+      const list = (docs || [])
+        .map((d) => d.state || {})
+        .filter((s) => s.sha)
+        .sort((a, b) => (b.at || 0) - (a.at || 0))
+        .slice(0, 100);
       return json(list);
     }
 
@@ -414,6 +507,16 @@ export default {
     try {
       const jn = await ghCleanupRuns(env);
       console.log("cron: janitor ->", JSON.stringify(jn));
+      // commits backup + rolling prune (500 max, logs size watchdog 10MB)
+      try {
+        const cs = await ghSaveCommits(env);
+        const pl = await sbPruneCount(env, "log_", 500);
+        const pc = await sbPruneCount(env, "commit_", 500);
+        const ps = await sbPruneSize(env, 10 * 1024 * 1024);
+        if (cs > 0 || pl > 0 || pc > 0 || ps > 0) console.log("cron: backup commits=" + cs + " pruneLogs=" + pl + " pruneCommits=" + pc + " pruneSize=" + ps);
+      } catch (e) {
+        console.log("cron: backup err", String(e).slice(0, 80));
+      }
 
       const pause = await sbGetRow(env, "pause");
       if (pause && pause.state && pause.state.paused) {
