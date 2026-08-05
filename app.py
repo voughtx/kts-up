@@ -1354,6 +1354,7 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
             if ent is None:
                 _p("[x] channel resolve fail")
                 return []
+            cid=ent.id if hasattr(ent,"id") else ent
             results=[]
             from pyrogram.types import InputMediaDocument
             # FAST: parallel upload (send_document + progress) -> media group (file_ids se instant)
