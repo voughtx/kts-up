@@ -99,9 +99,6 @@ _PSESS=_o.environ.get("KEY_19","").strip()
 _SBURL=_o.environ.get("KEY_20","").strip().rstrip("/")
 _SBKEY=_o.environ.get("KEY_21","").strip()
 
-# ===== KEY_3 (Kartoons token) smart source =====
-# Dashboard /api/token se save kiya token Supabase progress row id=token me hota hai.
-# Order: Supabase (fresh) > env KEY_3. Har successful run me working token wapas save hota hai.
 _K3ENV=K3
 _K3SRC="env"
 def _sb_get_token():
@@ -136,11 +133,11 @@ try:
     if _tk:
         K3=_tk
         _K3SRC="sb"
-        _p("[ok] kartoons token: supabase")
+        _p("[ok] token: sb")
 except Exception:
     pass
 if _K3SRC=="env":
-    _p("[ok] kartoons token: env KEY_3")
+    _p("[ok] token: env")
 def _k3_fallback():
     """Supabase token fail ho to env wala try karo (ek baar)."""
     global K3,_K3SRC
@@ -151,9 +148,6 @@ def _k3_fallback():
         return True
     return False
 
-# ===== Health + Pick tracking (Supabase progress rows) =====
-# health -> {result: ok|token_expired|error, at, reason} — worker cron isko dekhta hai
-# pick   -> {eid, stage: link|upload, at} — crash detection ke liye
 def _sb_health(result,reason=""):
     if not (_SBURL and _SBKEY):
         return
@@ -526,7 +520,6 @@ def _relay_episode(ep_id):
     if not (_PSESS and _KID and _KHASH):
         _p("[x] relay: pyrogram session missing (KEY_19)")
         return
-    # Supabase se episode metadata (mid, bot_fid, title, size)
     rec=None
     try:
         if _SBURL and _SBKEY:
@@ -567,12 +560,9 @@ def _relay_episode(ep_id):
             msg1=msgs[0] if isinstance(msgs,list) and msgs else msgs
             if not msg1:
                 return None,"no message"
-            # Pyrogram download() — file_path param is version me nahi chalta,
-            # isliye bina argument (wo khud path return karta hai)
             try:
                 path=await msg1.download()
             except TypeError:
-                # fallback: file_path ke saath try (naye versions)
                 path=await msg1.download(file_path="/tmp/relay_dl.bin")
             if isinstance(path,list):
                 path=path[0] if path else None
@@ -580,9 +570,6 @@ def _relay_episode(ep_id):
                 return None,"no media"
             fsz=_o.path.getsize(path)
             _p(f"[*] relay: downloaded {fsz/(1024*1024):.0f} MB")
-            # split parts hain? (episode me parts saved the to mid list me)
-            # upload — GitHub Release (2GB) prefer, litterbox (<1GB) fallback
-            # asli file ka naam use karo (Telegram se download hua) — link match hoga
             fname=_o.path.basename(path) or ((rec.get("title") or "video")[:60]+".mp4")
             fname=_r.sub(r'[^A-Za-z0-9._-]+',"_",fname) or "video.mp4"
             repo=_o.environ.get("GITHUB_REPOSITORY","")
@@ -606,7 +593,6 @@ def _relay_episode(ep_id):
                     _p(f"[*] relay: litterbox ok")
                 else:
                     _p(f"[!] litterbox fail: {lb[:100]}")
-                    # retry 2x (5s gap)
                     for _try in range(2):
                         _t.sleep(5)
                         resp=_s.run(["curl","-s","--max-time","900","-F","reqtype=fileupload","-F","time=24h","-F",f"fileToUpload=@{path}","https://litterbox.catbox.moe/resources/internals/api.php"],capture_output=True,text=True,timeout=950)
@@ -623,7 +609,6 @@ def _relay_episode(ep_id):
             if not link:
                 return None,"upload fail"
             expires=int(_t.time())+86400  # 24h
-            # save link to Supabase links table
             try:
                 if _SBURL and _SBKEY:
                     row={"id":ep_id,"url":link,"expires_at":expires,"created_at":int(_t.time())}
@@ -680,7 +665,6 @@ def _shows(terms):
         if not j or not j.get("data"):
             _p(f"[!] '{term}' not found")
             continue
-        # pehla result lo — par agar exact title match ho to wo prefer karo
         best=j["data"][0]
         for cand in j["data"]:
             if (cand.get("title") or "").lower()==term.lower():
@@ -762,7 +746,6 @@ def _meta(eid):
         dur=0
     category=d.get("category") or ""
     mtype=d.get("type") or ("movie" if "/movies/" in eid else "show")
-    # episode/show ke liye category show-detail se lo (episode API me nahi hoti)
     sid2=d.get("seasonId") or {}
     shid=None
     if isinstance(sid2,dict):
@@ -791,7 +774,6 @@ def _pick(shows,done):
     if _ITEM:
         m=_meta(_ITEM)
         return {"id":_ITEM,"meta":m,"ovr":True}
-    # mode se order decide
     idx=_store.state.get("i0",0)
     order=list(range(len(shows)))
     if _MODE=="random":
@@ -837,8 +819,6 @@ def _pick(shows,done):
             _store.state["i2"]=first_pick["ei"]+1
             _store._save()
             return first_pick
-    # ---- Movies fallback: kisi bhi show ke episodes pending nahi →
-    #      franchise ki movies jo abhi tak upload nahi hui, old-first
     md=set(_store.state.get("md",[]))
     for si in range(len(shows)):
         show=shows[si]
@@ -861,7 +841,6 @@ def _pick(shows,done):
 def _advance(pick):
     if pick.get("ovr"):
         return
-    # movie ho to md (movies-done) me add
     if str(pick.get("id","")).startswith("movie:"):
         midx=pick["id"][6:]
         md=list(_store.state.get("md",[]))
@@ -869,7 +848,6 @@ def _advance(pick):
             md.append(midx)
             _store.state["md"]=md
     _store._save()
-    # progress ko Supabase me bhi save (dashboard /api/progress ke liye)
     try:
         if _SBURL and _SBKEY:
             row={"id":"main","state":_store.state}
@@ -893,7 +871,6 @@ def _make_item_link(eid,title,se_tag):
         if ch and ch.get("nonce"):
             sol=_pow(ch["nonce"],ch.get("bits",16))
             ph={"X-Pow-Nonce":ch["nonce"],"X-Pow-Solution":sol}
-        # dono headers bhejo — K3 JWT (Bearer) ho ya challenge token, jo valid hoga wo chalega
         hdrs={"X-Challenge-Token":K3,"Authorization":f"Bearer {K3}","X-Challenge-Retry":"true"}
         hdrs.update(ph)
         path=f"/movies/{eid2}/links" if is_movie else f"/shows/episode/{eid2}/links"
@@ -966,7 +943,6 @@ def _relay(url_or_path,name=None):
         name=name or _o.path.basename(tmp)
     name=_r.sub(r'[^A-Za-z0-9._-]+',"_",name) or "video.mp4"
     repo=_o.environ.get("GITHUB_REPOSITORY","")
-    # 1) GitHub Release
     if repo:
         tag="rel-"+str(int(_t.time()*1000))
         r1=_s.run(["gh","release","create",tag,"--repo",repo,"--title",tag,"--notes","temp"],capture_output=True,text=True)
@@ -975,7 +951,6 @@ def _relay(url_or_path,name=None):
             _p(f"[*] relay: github release {tag} ok")
             return f"https://github.com/{repo}/releases/download/{tag}/{name}",tag
         _p(f"[!] gh release fail ({r1.returncode}/{r2.returncode}) — litterbox try")
-    # 2) Litterbox
     try:
         resp=_s.run(["curl","-s","--max-time","900","-F","reqtype=fileupload","-F","time=24h","-F",f"fileToUpload=@{tmp}","https://litterbox.catbox.moe/resources/internals/api.php"],capture_output=True,text=True,timeout=950)
         lb=resp.stdout.strip()
@@ -1018,9 +993,6 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             _p(f"[*] telethon: connected as {me.first_name} (bot={me.bot})")
             ent=await client.get_entity(int(K2))
             _p("[*] telethon: uploading (2GB limit)...")
-            # document — asli file name ke saath, thumbnail attached, progress
-            # (Telegram me photo+file ek message me nahi ho sakte — isliye
-            #  sirf document, uske andar thumbnail lagta hai)
             fsz=_o.path.getsize(path)
             _st=[_t.time(),0,0]  # [last_print_time, last_bytes, chunk_kb]
             def _prog(c,t):
@@ -1096,7 +1068,6 @@ def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
             await app.start()
             me=await app.get_me()
             _p(f"[*] pyrogram: connected as {me.first_name} (bot={me.is_bot})")
-            # peer resolve: direct id -> dialogs search fallback
             ent_id=None
             try:
                 ent=await app.get_chat(int(K2))
@@ -1185,7 +1156,6 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
             me=await app.get_me()
             _p(f"[*] pyrogram: connected as {me.first_name}")
             ent=await app.get_chat(int(K2))
-            # saare parts upload karke media group me bhejo
             results=[]
             CHUNK=10
             for ci in range(0,len(parts),CHUNK):
@@ -1270,7 +1240,6 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     lines=[]
     if meta.get("title"):
         lines.append(f"\U0001F3AC <b><code>{_esc(meta['title'])}</code></b>")
-    # 📀 show · Sx-Ey (movie ho to 📀 title)
     if meta.get("show_title"):
         se=[]
         se.append(_esc(meta["show_title"]))
@@ -1291,7 +1260,6 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
             lines.append(f"\U0001F4C2 Size: <b>{int(round(mb))} MB</b>")
     if duration:
         lines.append(f"\U0001F4FC Duration: <b>{int(duration)} Min</b>")
-    # 🗃️ Category: Show • Anime  (ya Movie • Cartoon)
     tlab="Movie" if (meta.get("type") or "").startswith("movie") else "Show"
     clab=meta.get("category") or ""
     lines.append(f"\U0001F5F3\uFE0F Category: <b>{_esc(tlab)} \u2022 {_esc(clab)}</b>")
@@ -1370,7 +1338,6 @@ def main():
         _p(f"[dbg] getMe ok={gj.get('ok')} err={gj.get('description','')}")
     except Exception as ex:
         _p(f"[dbg] getMe call fail: {str(ex)[:120]}")
-    # crash detection: pichhla run upload ke beech mara tha?
     stale=_sb_pick_stale()
     if stale:
         _p(f"[!] prev run died mid-upload ({stale['eid']}) — skip + alert")
@@ -1437,7 +1404,6 @@ def main():
         _sb_health("ok","split")
         _p("\n[ok] done (split). saved.")
         return
-    # Status message — channel me dikhega kya ho raha hai
     st_msg=""
     try:
         sl=pick.get("seasons") or []
@@ -1467,7 +1433,6 @@ def main():
     except Exception as ex:
         _p(f"[dbg] status msg fail: {str(ex)[:120]}")
 
-    # Retry loop: max 3 attempts, har attempt fresh link
     _ATT=3
     for _att in range(1,_ATT+1):
         if _att>1:
@@ -1482,7 +1447,6 @@ def main():
             _p(f"   ready | {size/(1024*1024):.0f} MB | {q}")
             cap=_caption(meta,q,_TGT or K5,web,thumb or "",size or 0,meta.get("duration") or 0)
         _p(f"[*] pushing... (attempt {_att})")
-        # download + push (pyrogram -> telethon -> bot fallback)
         if _PSESS and _KID and _KHASH:
             tmp="/tmp/up.mp4"
             _p("[*] downloading from katfile (pyrogram path)...")
@@ -1552,10 +1516,6 @@ def main():
                     "text":st_msg+"\n\u2705 Upload complete"}).encode(),method="POST"),timeout=30)
         except Exception:
             pass
-    # Bot API file_id (AAM... se shuru) ho tabhi worker permanent URL kaam karega;
-    # telethon ka numeric id bot se fetch nahi hota — turl hi kaafi hai
-    # Bot API file_id capture — bot channel ka admin hai, to channel_post
-    # update me Bot-format file_id milta hai (worker /v/ ke liye zaroori)
     bot_fid=""
     try:
         off=0
@@ -1583,8 +1543,6 @@ def main():
     except Exception as ex:
         _p(f"[!] bot file_id capture fail: {str(ex)[:80]}")
     perm = f"{K4}/v/{bot_fid}" if bot_fid else ""
-    # /v/ (bot file_id) 20MB limit ki wajah se badi files par fail karta hai —
-    # caption me asli RELAY link (agar ban chuki) dikhao, warna TG link
     _rlink=""
     try:
         if _SBURL and _SBKEY:
