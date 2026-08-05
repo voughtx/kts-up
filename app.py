@@ -810,7 +810,20 @@ def _movies_for(franchise):
     return ms
 
 def _meta(eid):
-    j=_json(f"/shows/episode/{eid}")
+    is_mv=eid.startswith("movie:")
+    eid2=eid[6:] if is_mv else eid
+    if is_mv:
+        j=_json(f"/movies/{eid2}")
+        if not j:
+            return {}
+        d=j.get("data") or {}
+        ttl=d.get("title") or ""
+        return {"title":ttl,"image":d.get("image") or "","season":None,"episode":None,
+                "show_title":_clean_title(ttl),"franchise":_franchise(ttl),
+                "duration":int(d.get("durationMinutes") or 0),
+                "category":d.get("category") or "","type":d.get("type") or "movie",
+                "lang":_detect_lang(ttl)}
+    j=_json(f"/shows/episode/{eid2}")
     if not j:
         return {}
     d=j.get("data") or {}
