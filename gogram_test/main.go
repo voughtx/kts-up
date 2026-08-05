@@ -17,6 +17,21 @@ import (
 
 func now() float64 { return float64(time.Now().UnixMilli()) / 1000.0 }
 
+// dcIP — Telegram DC ID -> production IP (manual map, ResolveDataCenterIP naya version mein nahi)
+func dcIP(dcID uint8) string {
+	ips := map[uint8]string{
+		1: "149.154.175.50",
+		2: "149.154.167.51",
+		3: "149.154.175.100",
+		4: "149.154.167.91",
+		5: "91.108.56.130",
+	}
+	if ip, ok := ips[dcID]; ok {
+		return ip
+	}
+	return "149.154.175.50"
+}
+
 // decodePyrogramSessionString — Pyrogram string session -> gogram Session
 // (official example: gogram/examples/sessions/pyrogram/main.go)
 func decodePyrogramSessionString(encodedString string) (*telegram.Session, error) {
@@ -40,7 +55,7 @@ func decodePyrogramSessionString(encodedString string) (*telegram.Session, error
 		return nil, fmt.Errorf("unexpected data length: got %d, want %d", len(packedData), expectedSize)
 	}
 	return &telegram.Session{
-		Hostname: telegram.ResolveDataCenterIP(int(uint8(packedData[0])), packedData[5] != 0, false),
+		Hostname: dcIP(uint8(packedData[0])),
 		AppID:    int32(uint32(packedData[1])<<24 | uint32(packedData[2])<<16 | uint32(packedData[3])<<8 | uint32(packedData[4])),
 		Key:      packedData[6 : 6+authKeySize],
 	}, nil
@@ -58,6 +73,7 @@ func main() {
 		os.Exit(1)
 	}
 	apiID64, _ := strconv.ParseInt(apiIDStr, 10, 32)
+	_ = apiID64 // session mein AppID already hai
 	chatID, _ := strconv.ParseInt(chatIDStr, 10, 64)
 	msgID, _ := strconv.ParseInt(msgIDStr, 10, 32)
 
