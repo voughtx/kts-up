@@ -1,7 +1,10 @@
-# KTS reorder_channel.py — channel messages ko reorder karta hai:
-# poster (top) → E1 → E2 → ... → E77 (bottom)
-# copy_message = server-side copy, NO forward tag. Purane delete baad mein.
-# Supabase + MongoDB update (mid/turl/fid) naye ids ke saath.
+# KTS reorder_channel.py — FINAL: channel reorder + cleanup
+# Steps:
+#   1. Supabase se episodes (mid asc) — copy DESC (E77 pehle = bottom, E1 upar)
+#   2. Poster sabse last send (top) + pin
+#   3. Purane saare messages delete (episodes + status spam)
+#   4. Supabase + Mongo update (naye mids)
+# copy_message = server-side copy, NO forward tag.
 import os, json, time, urllib.request as u
 
 K2 = os.environ.get("KEY_2", "").strip()
@@ -132,11 +135,11 @@ def main():
 
         eps = sb_get_episodes()
         eps = [e for e in eps if e.get("mid") and e.get("episode") is not None]
-        eps.sort(key=lambda e: (e.get("season") or 0, e.get("episode") or 0), reverse=True)  # E77 first
-        print(f"[*] episodes to reorder: {len(eps)}")
+        eps.sort(key=lambda e: (e.get("season") or 0, e.get("episode") or 0), reverse=True)  # E77 first (bottom)
+        print(f"[*] episodes to copy: {len(eps)}")
 
-        # 1. COPY (reverse: E77 sabse pehle = bottom, E1 upar, poster sabse last = top)
-        mapping = {}  # old_mid -> new_mid
+        # ===== 1. COPY (reverse) =====
+        mapping = {}
         for i, e in enumerate(eps):
             old_mid = int(e["mid"])
             dur_info = durs.get(e.get("id") or "", (0, ""))
@@ -145,15 +148,14 @@ def main():
                 m = await app.copy_message(chat.id, chat.id, old_mid, caption=cap, parse_mode=enums.ParseMode.HTML)
                 mapping[old_mid] = m.id
                 fid = m.document.file_id if m.document else ""
-                # thumb fix (E1): API se image mila to update
-                new_thumb = dur_info[1] or e.get("thumb") or ""
-                if e.get("episode") == 1 and not e.get("thumb") and new_thumb:
+                # E1 thumb fix
+                if e.get("episode") == 1 and not e.get("thumb") and dur_info[1]:
                     try:
-                        sb_patch(e["id"], {"thumb": new_thumb})
-                        print(f"   [thumb] E1 updated: {new_thumb[:60]}")
-                    except Exception as ex:
-                        print(f"   [thumb] fail: {str(ex)[:50]}")
-                # DB update abhi (mid/turl/fid)
+                        sb_patch(e["id"], {"thumb": dur_info[1]})
+                        print(f"   [thumb] E1 updated")
+                    except Exception:
+                        pass
+                # DB update turant (per-row)
                 try:
                     sb_patch(e["id"], {"mid": m.id, "turl": f"https://t.me/c/{str(K2).replace('-100','')}/{m.id}", "fid": fid})
                 except Exception as ex:
@@ -161,26 +163,14 @@ def main():
                 print(f"   [{i+1}/{len(eps)}] E{e.get('episode')} mid {old_mid} -> {m.id}")
             except Exception as ex:
                 print(f"   [x] copy fail {old_mid}: {str(ex)[:80]}")
-            time.sleep(0.6)
+            time.sleep(0.5)
 
-        # 2. POSTER (sabse upar) — purana poster dhundo + delete, naya send
-        poster_mid = None
-        try:
-            async for m in app.get_chat_history(chat.id, limit=200):
-                cap = (m.caption or "") if m.caption else ""
-                if m.id not in mapping.values() and "Total S" in cap:
-                    poster_mid = m.id
-                    break
-        except Exception:
-            pass
-        if poster_mid:
-            try:
-                await app.delete_messages(chat.id, poster_mid)
-                print(f"[ok] old poster deleted ({poster_mid})")
-            except Exception as ex:
-                print(f"[!] poster delete fail: {str(ex)[:60]}")
+        if len(mapping) < len(eps):
+            print(f"[x] ABORT: sirf {len(mapping)}/{len(eps)} copy hue — delete SKIP")
+            await app.stop()
+            return
 
-        # naya poster send (top)
+        # ===== 2. POSTER (sabse upar) =====
         try:
             img = ""
             cap = ""
@@ -210,23 +200,32 @@ def main():
                 msg = await app.send_photo(chat.id, tmp, caption=cap, parse_mode=enums.ParseMode.HTML)
                 try:
                     await app.pin_chat_message(chat.id, msg.id)
+                    print(f"[ok] new poster sent + pinned (mid {msg.id})")
                 except Exception:
-                    pass
-                print(f"[ok] new poster sent + pinned (mid {msg.id})")
+                    print(f"[ok] new poster sent (pin fail) (mid {msg.id})")
             else:
-                print("[!] no poster img")
+                print("[!] no poster img — skip")
         except Exception as ex:
             print(f"[!] poster fail: {str(ex)[:80]}")
 
-        # 3. DELETE purane (jo abhi bhi channel mein hain)
-        old_ids = [int(e["mid"]) for e in eps]
-        try:
-            await app.delete_messages(chat.id, old_ids)
-            print(f"[ok] deleted {len(old_ids)} old episode messages")
-        except Exception as ex:
-            print(f"[!] delete fail (kuch bache honge): {str(ex)[:80]}")
+        # ===== 3. DELETE saare purane (episodes + status spam + poster) =====
+        old_ids = []
+        async for m in app.get_chat_history(chat.id, limit=500):
+            if m.id not in mapping.values() and m.id != 1:
+                old_ids.append(m.id)
+        print(f"[*] purane messages to delete: {len(old_ids)}")
+        deleted = 0
+        for i in range(0, len(old_ids), 100):
+            chunk = old_ids[i:i+100]
+            try:
+                await app.delete_messages(chat.id, chunk)
+                deleted += len(chunk)
+            except Exception as ex:
+                print(f"[!] delete chunk fail: {str(ex)[:60]}")
+            time.sleep(0.3)
+        print(f"[ok] deleted {deleted}")
 
-        # 4. Mongo update (best effort)
+        # ===== 4. Mongo update =====
         if K7:
             try:
                 import pymongo
@@ -240,7 +239,7 @@ def main():
             except Exception as ex:
                 print(f"[!] mongo update fail: {str(ex)[:60]}")
 
-        print(f"[done] reorder complete — mapping size: {len(mapping)}")
+        print(f"[done] reorder complete — copies: {len(mapping)}")
         await app.stop()
 
     asyncio.run(run())
