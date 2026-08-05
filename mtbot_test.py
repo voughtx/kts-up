@@ -108,15 +108,18 @@ async def main():
     print(f"[single-user x8] {g1/MB:.0f} MB in {t1:.0f}s = {g1/t1/MB:.2f} MB/s")
     os.remove(out1)
 
-    # 2. MULTI-BOT (har session apna range, 4 workers each)
+    # 2. MULTI-BOT (har session apna range, 4 workers each) — MB-aligned ranges
     n = len(apps)
     out2 = "/tmp/mb_multi.bin"
     if os.path.exists(out2): os.remove(out2)
     t0 = time.time()
     ranges = []
     start = 0
+    per = (want // n) // MB * MB
+    if per < MB:
+        per = MB
     for i in range(n):
-        end = want if i == n - 1 else start + want // n
+        end = want if i == n - 1 else start + per
         ranges.append((start, end))
         start = end
     results = await asyncio.gather(*[
