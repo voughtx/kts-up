@@ -568,7 +568,7 @@ def _show_poster(pick):
                         break
             if ent is None:
                 return
-            msg=await app.send_photo(ent,tmp,caption=cap,parse_mode=_PM.HTML)
+            msg=await app.send_photo(ent.id if hasattr(ent,"id") else ent,tmp,caption=cap,parse_mode=_PM.HTML)
             try:
                 await app.pin_chat_message(ent.id,msg.id)
             except Exception:
