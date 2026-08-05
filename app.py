@@ -597,6 +597,69 @@ def _show_poster(pick):
         except Exception:
             pass
 
+def _movie_poster(meta):
+    """Movie ka poster send karo + pin (title + release year) — docs se PEHLE."""
+    if not (_HAS_PY and _KID and _KHASH and _PSESS):
+        return
+    title=meta.get("title") or ""
+    img=meta.get("image") or ""
+    year=meta.get("releaseYear") or 0
+    if not img:
+        _p("[!] movie poster: no image")
+        return
+    cap=f"\U0001F3AC <b>{_esc(title)}</b>"
+    if year:
+        cap+=f"\n\U0001F4C5 <b>{year}</b>"
+    _p(f"[*] movie poster: {title} ({year})")
+    tmp="/tmp/mposter.jpg"
+    try:
+        with _q.urlopen(_q.Request(img,headers={"User-Agent":_UA}),timeout=60) as resp:
+            with open(tmp,"wb") as f:
+                f.write(resp.read())
+    except Exception as ex:
+        _p(f"[!] movie poster download fail: {str(ex)[:80]}")
+        return
+    async def _do():
+        app=_Pyro(":memory:",api_id=int(_KID),api_hash=_KHASH,session_string=_PSESS,
+                  max_concurrent_transmissions=_CC)
+        try:
+            await app.start()
+            ent=None
+            try:
+                ent=await app.get_chat(int(K2))
+            except Exception:
+                async for d in app.get_dialogs():
+                    if d.chat and d.chat.id==int(K2):
+                        ent=d.chat
+                        break
+            if ent is None:
+                return
+            msg=await app.send_photo(ent.id if hasattr(ent,"id") else ent,tmp,caption=cap,parse_mode=_PM.HTML)
+            try:
+                await app.pin_chat_message(ent.id if hasattr(ent,"id") else ent,msg.id)
+                _p("[ok] movie poster sent + pinned")
+            except Exception:
+                _p("[ok] movie poster sent (pin fail)")
+        except Exception as ex:
+            _p(f"[!] movie poster fail: {str(ex)[:80]}")
+        finally:
+            try:
+                await app.stop()
+            except Exception:
+                pass
+    try:
+        _ac.get_event_loop().run_until_complete(_do())
+    except RuntimeError:
+        import nest_asyncio
+        try:
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        try:
+            _ac.get_event_loop().run_until_complete(_do())
+        except Exception:
+            pass
+
 def _relay_episode(ep_id):
     """Dashboard 'Get Link' → TG se download → public link (GitHub Release/litterbox).
     Link + expiry Supabase me save. Split parts merge hokar ek file."""
@@ -823,7 +886,7 @@ def _meta(eid):
                 "show_title":_clean_title(ttl),"franchise":_franchise(ttl),
                 "duration":int(d.get("durationMinutes") or 0),
                 "category":d.get("category") or "","type":d.get("type") or "movie",
-                "lang":_detect_lang(ttl)}
+                "lang":_detect_lang(ttl),"releaseYear":d.get("releaseYear") or 0}
     j=_json(f"/shows/episode/{eid2}")
     if not j:
         return {}
@@ -1220,6 +1283,23 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
     Caption sirf last part par. Returns: list of {part, fid, mid} ya []"""
     if not (_HAS_PY and _KID and _KHASH and _PSESS):
         return []
+    # thumbnail download (sab parts par lagega) — JPEG chahiye, ffmpeg se 320x scale
+    thumb_path=None
+    if thumb and str(thumb).startswith("http"):
+        try:
+            tp="/tmp/thumb.jpg"
+            with _q.urlopen(_q.Request(thumb,headers={"User-Agent":_UA}),timeout=60) as resp:
+                with open(tp,"wb") as f:
+                    f.write(resp.read())
+            _s.run(["ffmpeg","-y","-i",tp,"-vf","scale=320:-2","-q:v","5",tp+".s.jpg"],
+                   check=False,capture_output=True)
+            if _o.path.exists(tp+".s.jpg"):
+                thumb_path=tp+".s.jpg"
+            else:
+                thumb_path=tp
+            _p(f"[*] thumb ready ({_o.path.getsize(thumb_path)/(1024):.0f} KB)")
+        except Exception:
+            thumb_path=None
     tmp="/tmp/big.mp4"
     _p("\n[*] split: large file — downloading...")
     with _q.urlopen(_q.Request(link,headers={"User-Agent":_UA}),timeout=1800) as resp:
@@ -1277,6 +1357,7 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                     _p(f"   uploading part {n}/{len(parts)}...")
                     is_last=(n==len(parts))
                     media.append(InputMediaDocument(f"{outd}/{p}",
+                                                    thumb=thumb_path,
                                                     caption=cap if is_last else None,
                                                     parse_mode=_PM.HTML if is_last else None))
                 msgs=await app.send_media_group(ent.id if hasattr(ent,"id") else ent,media)
@@ -1486,6 +1567,12 @@ def main():
         try:
             if not _store_has_show(meta.get("show_title","")):
                 _show_poster(pick)
+        except Exception:
+            pass
+    else:
+        # movie: poster + release year + pin, docs se PEHLE
+        try:
+            _movie_poster(meta)
         except Exception:
             pass
     se_tag=""
