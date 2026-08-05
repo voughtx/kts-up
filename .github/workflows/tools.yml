@@ -34,6 +34,7 @@ jobs:
           KEY_16: ${{ secrets.KEY_16 }}
           KEY_17: ${{ secrets.KEY_17 }}
           KEY_19: ${{ secrets.KEY_19 }}
+          KEY_8: ${{ secrets.KEY_8 }}
           KEY_20: ${{ secrets.KEY_20 }}
           KEY_21: ${{ secrets.KEY_21 }}
           SHOW_ID: ${{ secrets.SHOW_ID }}
