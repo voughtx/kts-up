@@ -1155,7 +1155,18 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
             await app.start()
             me=await app.get_me()
             _p(f"[*] pyrogram: connected as {me.first_name}")
-            ent=await app.get_chat(int(K2))
+            ent=None
+            try:
+                ent=await app.get_chat(int(K2))
+            except Exception:
+                _p("[!] get_chat fail — dialogs me dhund raha hoon...")
+                async for d in app.get_dialogs():
+                    if d.chat and d.chat.id==int(K2):
+                        ent=d.chat
+                        break
+            if ent is None:
+                _p("[x] channel resolve fail")
+                return []
             results=[]
             CHUNK=10
             for ci in range(0,len(parts),CHUNK):
