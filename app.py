@@ -1264,19 +1264,6 @@ def _caption(meta,q,target,web,thumb_url="",size=0,duration=0):
     clab=meta.get("category") or ""
     lines.append(f"\U0001F5F3\uFE0F Category: <b>{_esc(tlab)} \u2022 {_esc(clab)}</b>")
     lines.append(_SEP)
-    tgt=""
-    if web:
-        dom=web.split("//")[-1].split("/")[0]
-        lab=dom.split(".")[0].capitalize() if "." in dom else dom
-        tgt=f"<b><a href=\"{_esc(web)}\">{_esc(lab)}</a></b>"
-    elif target:
-        tgt=f"<b>{_esc(target)}</b>"
-    if tgt and thumb_url:
-        lines.append(f"\U0001F3AF {tgt} | <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
-    elif tgt:
-        lines.append(f"\U0001F3AF {tgt}")
-    elif thumb_url:
-        lines.append(f"\U0001F3AF <b><a href=\"{_esc(thumb_url)}\">Thumbnail</a></b>")
     return "\n".join(lines)
 def _split_send(link,base,cap,thumb):
     tmp="/tmp/big.mp4"
@@ -1554,16 +1541,6 @@ def main():
                     _rlink=arr[0]["url"]
     except Exception:
         pass
-    _link_line=""
-    if _rlink:
-        _link_line=f"\n\U0001F517 <a href=\"{_esc(_rlink)}\">Download</a>"
-    elif _turl(mid) if mid else False:
-        _link_line=f"\n\U0001F517 <a href=\"{_esc(_turl(mid))}\">Channel</a>"
-    if _link_line:
-        try:
-            _q.urlopen(_q.Request(f"{_TBASE}{K1}/editMessageCaption",data=_u.urlencode({"chat_id":K2,"message_id":mid,"caption":cap+_link_line,"parse_mode":"HTML"}).encode(),method="POST"),timeout=60)
-        except Exception:
-            pass
     _doc={"id":eid,"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
           "season":meta.get("season"),"episode":meta.get("episode"),
           "title":meta.get("title",""),"quality":q,"qualities":quals,

@@ -1,0 +1,37 @@
+name: tools
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "script name (fix_captions.py / sync_missing.py / ...)"
+        required: true
+      limit:
+        description: "optional limit"
+        required: false
+        default: "200"
+concurrency:
+  group: run-task
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: deps
+        run: pip install -q pymongo[srv] || true
+      - name: run tool
+        env:
+          KEY_1: ${{ secrets.KEY_1 }}
+          KEY_2: ${{ secrets.KEY_2 }}
+          KEY_7: ${{ secrets.KEY_7 }}
+          KEY_13: ${{ secrets.KEY_13 }}
+          KEY_20: ${{ secrets.KEY_20 }}
+          KEY_21: ${{ secrets.KEY_21 }}
+          LIMIT: ${{ inputs.limit }}
+        run: python ${{ inputs.script }}
