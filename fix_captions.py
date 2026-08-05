@@ -58,11 +58,29 @@ def main():
     import asyncio
 
     async def run():
+        from pyrogram import Client
+        import asyncio
+
         app = Client("fixsess", session_string=PSESS, api_id=int(AID) if AID else None,
                      api_hash=AHASH or None, no_updates=True)
         await app.start()
         me = await app.get_me()
         print(f"[*] connected as {me.username or me.first_name} (bot={me.is_bot})")
+        # channel resolve — direct ID "Peer id invalid" deti hai, dialogs scan fallback
+        chat = None
+        try:
+            chat = await app.get_chat(int(K2))
+        except Exception:
+            print("[!] get_chat fail — dialogs scan...")
+            async for d in app.get_dialogs():
+                if d.chat and d.chat.id == int(K2):
+                    chat = d.chat
+                    break
+        if chat is None:
+            print("[x] channel resolve fail")
+            await app.stop()
+            return
+        print(f"[*] target resolved: {chat.title} ({chat.id})")
         eps = sb_get_episodes()
         print(f"[*] total episodes: {len(eps)}")
         okc, failc = 0, 0
@@ -73,7 +91,7 @@ def main():
                 continue
             cap = build_caption(d)
             try:
-                await app.edit_message_caption(int(K2), int(mid), cap, parse_mode="html")
+                await app.edit_message_caption(chat.id, int(mid), cap, parse_mode="html")
                 okc += 1
             except Exception as e:
                 failc += 1
