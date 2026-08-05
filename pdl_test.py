@@ -48,15 +48,15 @@ async def parallel_dl(app, msg, path, workers=8):
         got_w = 0
         with open(path_w, "wb") as f:
             while off < r1:
-                lim = min(chunk, r1 - off)
-                res = await app.invoke(GetFile(location=loc, offset=off, limit=lim,
+                res = await app.invoke(GetFile(location=loc, offset=off, limit=chunk,
                                                precise=1, cdn_supported=True))
                 data = res.bytes
                 if not data:
                     break
-                f.write(data)
-                off += len(data)
-                got_w += len(data)
+                w = min(len(data), r1 - off)
+                f.write(data[:w])
+                off += w
+                got_w += w
                 now = time.time()
                 if now - last[0] >= 10:
                     sp = got_w / (now - t0)
