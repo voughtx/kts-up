@@ -49,6 +49,10 @@ on:
         description: "parallel download workers"
         required: false
         default: "8"
+      ep_id:
+        description: "episode id to delete (optional)"
+        required: false
+        default: ""
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -102,6 +106,7 @@ jobs:
           PIN_MID: ${{ inputs.pin_mid }}
           MIDS: ${{ inputs.mids }}
           WORKERS: ${{ inputs.workers }}
+          EP_ID: ${{ inputs.ep_id }}
           LINK_IDS: ${{ inputs.link_ids }}
           PUB: ${{ inputs.pub }}
           EXP_H: ${{ inputs.exp_h }}
