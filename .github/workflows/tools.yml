@@ -51,6 +51,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: pip cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-tools-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-tools-${{ runner.os }}-
       - name: deps
         run: pip install -q pymongo[srv] pyrogram TgCrypto || true
       - name: run tool
