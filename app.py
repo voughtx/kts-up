@@ -893,7 +893,8 @@ def _make_item_link(eid,title,se_tag):
         if ch and ch.get("nonce"):
             sol=_pow(ch["nonce"],ch.get("bits",16))
             ph={"X-Pow-Nonce":ch["nonce"],"X-Pow-Solution":sol}
-        hdrs={"X-Challenge-Token":K3,"X-Challenge-Retry":"true"}
+        # dono headers bhejo — K3 JWT (Bearer) ho ya challenge token, jo valid hoga wo chalega
+        hdrs={"X-Challenge-Token":K3,"Authorization":f"Bearer {K3}","X-Challenge-Retry":"true"}
         hdrs.update(ph)
         path=f"/movies/{eid2}/links" if is_movie else f"/shows/episode/{eid2}/links"
         st,body=_req_api(path,headers=hdrs)
