@@ -1210,6 +1210,105 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             pass
         return _ac.get_event_loop().run_until_complete(_do())
 
+def _push_multibot(path,caption,thumb=None,name="video.mp4"):
+    """MULTI-SESSION bot upload — same bot ke N auth-key sessions, file parts
+    RANGE-wise split, har session apne pipelined senders se upload (FastTelethon.
+    upload_file_multi — proven: 2 sessions ~12-16 MB/s vs single ~4-8).
+    Sessions Supabase se aati hain (make_bot_sessions.py ne banayi).
+    Fallback: caller _push_telethon use karega."""
+    if not (_KID and _KHASH and _SBURL and _SBKEY):
+        return None,"multibot config missing"
+    try:
+        from telethon import TelegramClient as _TLC
+        from telethon.sessions import StringSession as _TSS
+        from telethon.tl.types import DocumentAttributeFilename as _DAF
+        from FastTelethon import upload_file_multi as _ft_multi
+    except Exception as ex:
+        return None,f"multibot imports fail: {str(ex)[:60]}"
+    # Supabase se sessions load
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.bot_sessions&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=30) as r:
+            docs=_j.loads(r.read().decode())
+        st=(docs[0].get("state") or {}) if docs else {}
+    except Exception as ex:
+        return None,f"multibot sb fail: {str(ex)[:60]}"
+    bots={k:v for k,v in st.items() if isinstance(v,list) and len(v)>=2}
+    if not bots:
+        return None,"multibot: no bot with >=2 sessions"
+    # round-robin: filename hash se bot pick
+    keys=sorted(bots.keys())
+    bot=keys[sum(ord(c) for c in (name or "x"))%len(keys)]
+    sesses=bots[bot][:4]  # max 4 sessions
+    n=len(sesses)
+    fsz=_o.path.getsize(path)
+    _p(f"[*] multibot: {bot} x{n} sessions | {fsz/(1024*1024):.0f} MB")
+    # thumb download
+    thumb_path=None
+    if thumb and str(thumb).startswith("http"):
+        try:
+            thumb_path="/tmp/thumb.jpg"
+            with _q.urlopen(_q.Request(thumb,headers={"User-Agent":_UA}),timeout=60) as resp:
+                with open(thumb_path,"wb") as f:
+                    while True:
+                        c=resp.read(1<<20)
+                        if not c:
+                            break
+                        f.write(c)
+            if _o.path.getsize(thumb_path)<1000:
+                thumb_path=None
+        except Exception:
+            thumb_path=None
+    async def _do():
+        clients=[]
+        try:
+            for ss in sesses:
+                c=_TLC(_TSS(ss),int(_KID),_KHASH,connection_retries=2)
+                await c.connect()
+                clients.append(c)
+            ent=await clients[0].get_entity(int(K2))
+            _st=[_t.time(),0,0]
+            def _prog(c,t):
+                now=_t.time()
+                if now-_st[0]>=10 or c>=t:
+                    dt=now-_st[0]
+                    spd=((c-_st[1])/(1024*1024)/dt) if dt>0 else 0
+                    _st[0]=now;_st[1]=c
+                    _p(f"   upload {c*100//t}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | {spd:.1f} MB/s",flush=True)
+            conns=15 if n>=3 else 20
+            pkb=1024 if fsz>900*1024*1024 else None  # bade files: 1MB parts (part count < 4000)
+            with open(path,"rb") as fh:
+                up=await _ft_multi(clients,fh,progress_callback=_prog,
+                                   conns_per_client=conns,part_size_kb=pkb)
+            media=_tlu.get_input_media(up,force_document=True,
+                                       attributes=[_DAF(file_name=name or "video.mp4")])
+            msg=await clients[0].send_file(ent,media,force_document=True,thumb=thumb_path or None,
+                                           caption=caption,parse_mode="html")
+            fid=""
+            if getattr(msg,"video",None) is not None:
+                fid=str(msg.video.id)
+            elif getattr(msg,"document",None) is not None:
+                fid=str(msg.document.id)
+            return {"message_id":msg.id,"video":{"file_id":fid}},None
+        except Exception as ex:
+            return None,f"multibot fail: {str(ex)[:200]}"
+        finally:
+            for c in clients:
+                try:
+                    await c.disconnect()
+                except Exception:
+                    pass
+    try:
+        return _ac.get_event_loop().run_until_complete(_do())
+    except RuntimeError:
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        return _ac.get_event_loop().run_until_complete(_do())
+
 def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
     """Pyrogram se concurrent upload (fast). 2GB limit."""
     if not (_HAS_PY and _KID and _KHASH and _PSESS):
@@ -1716,9 +1815,12 @@ def main():
                             break
                         f.write(c)
             _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
-            # FastTelethon (parallel) PRIMARY — pyrogram fallback
+            # MULTI-BOT sessions (same bot, split parts) PRIMARY — telethon/pyrogram fallback
             if _KSESS and _KID and _KHASH:
-                msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
+                msg,err=_push_multibot(tmp,cap,thumb,name=name or "video.mp4")
+                if not msg:
+                    _p(f"[!] multibot fail ({err}) — telethon fallback...")
+                    msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
                 if not msg and _PSESS and not _NOFB:
                     _p(f"[!] telethon fail ({err}) — pyrogram fallback...")
                     msg,err=_push_pyrogram(tmp,cap,thumb,name=name or "video.mp4")
