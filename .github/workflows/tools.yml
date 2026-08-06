@@ -118,6 +118,7 @@ jobs:
           MOVIE_ID: ${{ inputs.movie_id }}
           PIN: ${{ inputs.pin }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CF_TOKEN: ${{ secrets.CF_TOKEN }}
           LINK_ID: ${{ inputs.link_id }}
           OUT_NAME: ${{ inputs.out_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
