@@ -17,23 +17,21 @@ BOT_TOKENS = {f"bot{i+1}": os.environ.get(f"KEY_{i}", "").strip() for i in range
 SBURL = os.environ.get("KEY_20", "").strip()
 SBKEY = os.environ.get("KEY_21", "").strip()
 
-def rle_encode(data):
-    result = b""
-    i = 0
-    while i < len(data):
-        padding = 0
-        while i + padding < len(data) and data[i + padding] == 0 and padding < 254:
-            padding += 1
-        if padding > 0:
-            result += b"\x00" + bytes([padding]) + data[i:i+padding]
-            i += padding
+def rle_encode(s: bytes) -> bytes:
+    """pyrogram-exact zero-value RLE encoder"""
+    r = []
+    n = 0
+    for b in s:
+        if not b:
+            n += 1
         else:
-            run = 1
-            while i + run < len(data) and data[i + run] != 0 and run < 254:
-                run += 1
-            result += bytes([run]) + data[i:i+run]
-            i += run
-    return result
+            if n:
+                r.extend((0, n))
+                n = 0
+            r.append(b)
+    if n:
+        r.extend((0, n))
+    return bytes(r)
 
 def b64_encode(data):
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
@@ -43,9 +41,10 @@ def make_doc_file_id(dc_id, media_id, access_hash, file_reference):
     file_type = 5 | FILE_REFERENCE_FLAG  # DOCUMENT
     buf = struct.pack("<ii", file_type, dc_id)
     fr = file_reference or b""
-    buf += struct.pack("<i", len(fr)) + fr
-    pad = (4 - (len(fr) + 4) % 4) % 4
-    buf += b"\x00" * pad
+    if len(fr) <= 253:
+        buf += bytes([len(fr)]) + fr + b"\x00" * (-(len(fr) + 1) % 4)
+    else:
+        buf += bytes([254]) + len(fr).to_bytes(3, "little") + fr + b"\x00" * (-len(fr) % 4)
     buf += struct.pack("<qq", media_id, access_hash)
     buf += struct.pack("<ii", 30, 4)
     buf += struct.pack("<bb", 30, 4)
