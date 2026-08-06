@@ -65,7 +65,7 @@ async def main():
         print(f"  {m.id}: {fn[:45]} | {(m.message or '')[:40]}", flush=True)
     # DELETE
     res = await c.delete_messages(ch, DELETE_IDS)
-    print(f"[ok] deleted: {len(DELETE_IDS)} (telethon returned {res.ids})", flush=True)
+    print(f"[ok] deleted: {len(DELETE_IDS)} -> {res}", flush=True)
     await c.disconnect()
 
     # DB cleanup — S10E1-3
