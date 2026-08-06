@@ -41,7 +41,7 @@ def mongo_delete(eids):
             print("[!] KEY_7 missing — mongo skip", flush=True)
             return
         cli = MongoClient(uri, serverSelectionTimeoutMS=15000)
-        db = cli.get_default_database()
+        db = cli.get_database("kts")
         coll = db.episodes if "episodes" in db.list_collection_names() else db["episodes"]
         res = coll.delete_many({"id": {"$in": eids}})
         print(f"[ok] mongo deleted: {res.deleted_count}", flush=True)
