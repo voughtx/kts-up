@@ -56,6 +56,9 @@ async def make_one(token, name):
 async def main():
     print(f"[*] bots: {len(BOT_TOKENS)} | per_bot: {PER_BOT} | pause: {PAUSE}s", flush=True)
     state = sb_get()
+    # tokens bhi store (file_id capture ke liye posting bot ka token chahiye)
+    state["tokens"] = {f"bot{i+1}": tok for i, tok in enumerate(BOT_TOKENS)}
+    sb_save(state)
     print(f"[*] existing sessions: {sum(len(v) for v in state.values() if isinstance(v, list))}", flush=True)
     for i, tok in enumerate(BOT_TOKENS):
         name = f"bot{i+1}"

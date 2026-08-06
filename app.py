@@ -1290,7 +1290,7 @@ def _push_multibot(path,caption,thumb=None,name="video.mp4"):
                 fid=str(msg.video.id)
             elif getattr(msg,"document",None) is not None:
                 fid=str(msg.document.id)
-            return {"message_id":msg.id,"video":{"file_id":fid}},None
+            return {"message_id":msg.id,"video":{"file_id":fid},"bot":bot},None
         except Exception as ex:
             return None,f"multibot fail: {str(ex)[:200]}"
         finally:
@@ -1882,10 +1882,24 @@ def main():
         except Exception:
             pass
     bot_fid=""
+    _cap_tok=K1
+    try:
+        # multibot se post hua to USI bot ka token use karo (uske getUpdates mein channel_post dikhega)
+        if msg.get("bot") and _SBURL and _SBKEY:
+            url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.bot_sessions&limit=1"
+            req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+            with _q.urlopen(req,timeout=30) as r:
+                docs=_j.loads(r.read().decode())
+            st=(docs[0].get("state") or {}) if docs else {}
+            tk=(st.get("tokens") or {}).get(msg["bot"]) or ""
+            if tk:
+                _cap_tok=tk
+    except Exception:
+        pass
     try:
         off=0
         for _u_att in range(12):
-            resp=_q.urlopen(_q.Request(f"{_TBASE}{K1}/getUpdates?timeout=5&offset={off}",headers={"User-Agent":_UA}),timeout=35)
+            resp=_q.urlopen(_q.Request(f"{_TBASE}{_cap_tok}/getUpdates?timeout=5&offset={off}",headers={"User-Agent":_UA}),timeout=35)
             upd=_j.loads(resp.read().decode())
             got=False
             for u in upd.get("result",[]):
