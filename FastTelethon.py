@@ -346,7 +346,6 @@ async def upload_file_multi(clients: List[TelegramClient],
         fh = open(file.name, "rb")  # har range ka apna handle (seek race se bachne ke liye)
         fh.seek(start * part_size)
         remaining = (end - start) * part_size
-        ticker = 0
         buffer = bytearray()
         while remaining > 0:
             chunk = fh.read(min(1 << 20, remaining))
@@ -357,20 +356,12 @@ async def upload_file_multi(clients: List[TelegramClient],
                 r = progress_callback(fh.tell(), file_size)
                 if inspect.isawaitable(r):
                     await r
-            if len(buffer) == 0 and len(chunk) == part_size:
-                await pt.upload(chunk)
+            buffer.extend(chunk)
+            while len(buffer) >= part_size:
+                part = bytes(buffer[:part_size])
+                del buffer[:part_size]
+                await pt.upload(part)
                 done[0] += 1
-                continue
-            new_len = len(buffer) + len(chunk)
-            if new_len >= part_size:
-                cutoff = part_size - len(buffer)
-                buffer.extend(chunk[:cutoff])
-                await pt.upload(bytes(buffer))
-                done[0] += 1
-                buffer.clear()
-                buffer.extend(chunk[cutoff:])
-            else:
-                buffer.extend(chunk)
         if len(buffer) > 0:
             await pt.upload(bytes(buffer))
             done[0] += 1
