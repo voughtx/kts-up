@@ -223,7 +223,13 @@ try:
 except Exception:
     _CC=100
 _SPLIT=int(_o.environ.get("SPLIT_MB","1700"))*1024*1024
-_SPLITPART=int(_o.environ.get("SPLIT_PART_MB","1900"))*1024*1024
+_SPLITPART=1900*1024*1024
+try:
+    _spm=_o.environ.get("SPLIT_PART_MB","").strip()
+    if _spm:
+        _SPLITPART=int(_spm)*1024*1024
+except Exception:
+    pass
 _DRY=_o.environ.get("DRY_RUN","").lower() in ("1","true","yes")
 _ITEM=_o.environ.get("ITEM_ID","").strip()
 _QUAL=_o.environ.get("QUALITY","").strip() or "best"
