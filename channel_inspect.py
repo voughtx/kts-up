@@ -20,7 +20,7 @@ async def main():
     await c.connect()
     ch = await c.get_entity(int(CHAT))
     print(f"[*] chat: {getattr(ch, 'title', ch)}", flush=True)
-    msgs = await c.get_messages(ch, min_id=300, max_id=585)
+    msgs = await c.get_messages(ch, min_id=540, max_id=590)
     msgs = sorted(msgs, key=lambda m: m.id)
     for m in msgs:
         mt = "?"
