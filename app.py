@@ -1210,6 +1210,35 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             pass
         return _ac.get_event_loop().run_until_complete(_do())
 
+def _bot_file_id(dc_id,media_id,access_hash,file_reference):
+    """MTProto document -> Bot API file_id (pyrogram FileId v4 format, roundtrip verified)"""
+    try:
+        import struct as _st, base64 as _b64
+        FILE_REFERENCE_FLAG=1<<25
+        ft=5|FILE_REFERENCE_FLAG
+        buf=_st.pack("<ii",ft,dc_id)
+        fr=file_reference or b""
+        if len(fr)<=253:
+            buf+=bytes([len(fr)])+fr+b"\x00"*(-(len(fr)+1)%4)
+        else:
+            buf+=bytes([254])+len(fr).to_bytes(3,"little")+fr+b"\x00"*(-len(fr)%4)
+        buf+=_st.pack("<qq",media_id,access_hash)
+        buf+=_st.pack("<ii",30,4)+_st.pack("<bb",30,4)
+        # rle (pyrogram-exact)
+        r=[];n=0
+        for b in buf:
+            if not b:
+                n+=1
+            else:
+                if n:
+                    r.extend((0,n));n=0
+                r.append(b)
+        if n:
+            r.extend((0,n))
+        return _b64.urlsafe_b64encode(bytes(r)).decode().strip("=")
+    except Exception:
+        return ""
+
 def _push_multibot(path,caption,thumb=None,name="video.mp4"):
     """MULTI-SESSION bot upload — same bot ke N auth-key sessions, file parts
     RANGE-wise split, har session apne pipelined senders se upload (FastTelethon.
@@ -1286,11 +1315,18 @@ def _push_multibot(path,caption,thumb=None,name="video.mp4"):
             msg=await clients[0].send_file(ent,media,force_document=True,thumb=thumb_path or None,
                                            caption=caption,parse_mode="html")
             fid=""
+            bfid=""
             if getattr(msg,"video",None) is not None:
                 fid=str(msg.video.id)
+                dv=getattr(msg,"video",None)
+                if getattr(dv,"access_hash",None):
+                    bfid=_bot_file_id(getattr(dv,"dc_id",0) or 0,dv.id,dv.access_hash,getattr(dv,"file_reference",b""))
             elif getattr(msg,"document",None) is not None:
-                fid=str(msg.document.id)
-            return {"message_id":msg.id,"video":{"file_id":fid},"bot":bot},None
+                doc=getattr(msg,"document",None)
+                fid=str(doc.id)
+                if getattr(doc,"access_hash",None):
+                    bfid=_bot_file_id(getattr(doc,"dc_id",0) or 0,doc.id,doc.access_hash,getattr(doc,"file_reference",b""))
+            return {"message_id":msg.id,"video":{"file_id":fid},"bot":bot,"bot_fid":bfid},None
         except Exception as ex:
             return None,f"multibot fail: {str(ex)[:200]}"
         finally:
@@ -1873,6 +1909,7 @@ def main():
     fid=""
     if msg.get("video"):
         fid=msg["video"].get("file_id","")
+    bot_fid_cap=msg.get("bot_fid","")
     mid=msg.get("message_id")
     if st_mid:
         try:
@@ -1881,7 +1918,7 @@ def main():
                     "text":st_msg+"\n\u2705 Upload complete"}).encode(),method="POST"),timeout=30)
         except Exception:
             pass
-    bot_fid=""
+    bot_fid=bot_fid_cap
     _cap_tok=K1
     try:
         # multibot se post hua to USI bot ka token use karo (uske getUpdates mein channel_post dikhega)
@@ -1896,31 +1933,32 @@ def main():
                 _cap_tok=tk
     except Exception:
         pass
-    try:
-        off=0
-        for _u_att in range(12):
-            resp=_q.urlopen(_q.Request(f"{_TBASE}{_cap_tok}/getUpdates?timeout=5&offset={off}",headers={"User-Agent":_UA}),timeout=35)
-            upd=_j.loads(resp.read().decode())
-            got=False
-            for u in upd.get("result",[]):
-                off=u.get("update_id",0)+1
-                cp=u.get("channel_post") or {}
-                if cp.get("message_id")==mid:
-                    doc=cp.get("document") or {}
-                    if doc.get("file_id"):
-                        bot_fid=doc["file_id"]
-                        got=True
-                        break
+    if not bot_fid:
+        try:
+            off=0
+            for _u_att in range(12):
+                resp=_q.urlopen(_q.Request(f"{_TBASE}{_cap_tok}/getUpdates?timeout=5&offset={off}",headers={"User-Agent":_UA}),timeout=35)
+                upd=_j.loads(resp.read().decode())
+                got=False
+                for u in upd.get("result",[]):
+                    off=u.get("update_id",0)+1
+                    cp=u.get("channel_post") or {}
+                    if cp.get("message_id")==mid:
+                        doc=cp.get("document") or {}
+                        if doc.get("file_id"):
+                            bot_fid=doc["file_id"]
+                            got=True
+                            break
+                if bot_fid:
+                    break
+                if not got:
+                    break
             if bot_fid:
-                break
-            if not got:
-                break
-        if bot_fid:
-            _p(f"[dbg] bot file_id captured ({bot_fid[:20]}...)")
-        else:
-            _p("[!] bot file_id nahi mila — permanent URL skip")
-    except Exception as ex:
-        _p(f"[!] bot file_id capture fail: {str(ex)[:80]}")
+                _p(f"[dbg] bot file_id captured ({bot_fid[:20]}...)")
+            else:
+                _p("[!] bot file_id nahi mila — permanent URL skip")
+        except Exception as ex:
+            _p(f"[!] bot file_id capture fail: {str(ex)[:80]}")
     perm = f"{K4}/v/{bot_fid}" if bot_fid else ""
     _rlink=""
     try:
