@@ -252,6 +252,15 @@ def _req_api(path,headers=None,data=None):
         return ex.code,ex.read().decode("utf-8","replace")
     except Exception as ex:
         return 0,str(ex)
+def _auth_me_ok(tok=None):
+    """Token sach mein zinda hai? /auth/me Bearer 200 = alive"""
+    tok=tok or K3
+    try:
+        st,body=_req_api("/auth/me",headers={"Authorization":f"Bearer {tok}"})
+        return st==200
+    except Exception:
+        return False
+
 def _challenge(content):
     st,body=_req_api("/challenge/pow?content="+_u.quote(content))
     if st!=200:
@@ -933,6 +942,44 @@ def _lang_ok(meta):
         return True
     return (meta.get("lang") or "Hindi")=="Hindi"
 
+def _all_ordered_candidates(shows):
+    """MULTI-REPO: full ordered episode list (done/claimed included) — seq mapping stable."""
+    out=[]
+    for show in shows:
+        sid=show["_id"]
+        seasons=_seasons(sid)
+        if not _S0:
+            seasons=[s for s in seasons if (s.get("seasonNumber") or 0)!=0]
+        for season in seasons:
+            eps=_eps(sid,season["_id"])
+            for ep in eps:
+                out.append(ep["_id"])
+    return out
+
+def _claim_next(cands, done):
+    """MULTI-REPO: mongo atomic unique claim — har run ko alag episode.
+    claims collection {_id: eid, at} — unique _id = lock (duplicate insert fail)."""
+    try:
+        from pymongo.errors import DuplicateKeyError as _DKE
+        # stale claims cleanup (>30 min — crash recovery)
+        try:
+            _store.db.claims.delete_many({"at":{"$lt":int(_t.time())-1800}})
+        except Exception:
+            pass
+        now=int(_t.time())
+        for cid in cands:
+            if cid in done:
+                continue
+            try:
+                _store.db.claims.insert_one({"_id":cid,"at":now})
+                return cid, (cands.index(cid)+1)  # seq = global ordered position
+            except _DKE:
+                continue  # kisi aur ne claim kiya — agli try
+        return None, None
+    except Exception as ex:
+        _p(f"[!] claim fail ({str(ex)[:60]}) — fallback sequential")
+        return None, None
+
 def _pick(shows,done):
     """Agli item pick karo — modes: ordered/random/popular.
     Ek show complete tabhi hota hai jab uske saare episodes uploaded hain.
@@ -940,6 +987,23 @@ def _pick(shows,done):
     if _ITEM:
         m=_meta(_ITEM)
         return {"id":_ITEM,"meta":m,"ovr":True}
+    if _o.environ.get("MULTI_REPO","").strip()=="1":
+        cands=_all_ordered_candidates(shows)
+        cid,seq=_claim_next(cands,done)
+        if cid is None:
+            _p("[*] sab claimed/done.")
+            return None
+        m=_meta(cid)
+        if not m.get("title"):
+            m["title"]="Episode"
+        if not _lang_ok(m):
+            _p(f"[!] claimed lang fail — skip {cid}")
+            try:
+                _store.db.claims.delete_one({"_id":cid})
+            except Exception:
+                pass
+            return None
+        return {"id":cid,"meta":m,"ovr":True,"seq":seq}
     idx=_store.state.get("i0",0)
     order=list(range(len(shows)))
     if _MODE=="random":
@@ -1031,7 +1095,9 @@ def _make_item_link(eid,title,se_tag):
     is_movie=eid.startswith("movie:")
     eid2=eid[6:] if is_movie else eid
     content=f"movie:{eid2}" if is_movie else f"episode:{eid2}"
-    for _att in range(2):  # attempt 1: current K3, attempt 2: fallback source
+    # JWT RESILIENCE: 403/401 pe pehle fresh PoW retries (PoW expiry race hai) —
+    # turant token_expired flag mat karo. Sirf /auth/me bhi fail ho to token dead.
+    for _att in range(4):
         ch=_challenge(content)
         ph={}
         if ch and ch.get("nonce"):
@@ -1043,12 +1109,21 @@ def _make_item_link(eid,title,se_tag):
         st,body=_req_api(path,headers=hdrs)
         if st==200:
             break
-        if st in (401,403) and _att==0 and _k3_fallback():
-            _p("[*] token switch — retrying...")
+        if st in (401,403) and _att<2:
+            _p(f"[x] links HTTP {st} (att {_att+1}) — fresh PoW retry...")
+            _t.sleep(2)
             continue
-        _p(f"[x] links HTTP {st}")
         if st in (401,403):
-            _sb_health("token_expired",f"links HTTP {st}")
+            # token sach mein dead? /auth/me check
+            _alive=_auth_me_ok()
+            if not _alive and _att==2 and _k3_fallback():
+                _p("[*] token dead — env fallback try...")
+                continue
+            if _alive:
+                _sb_health("error",f"links HTTP {st} (transient)")
+            else:
+                _sb_health("token_expired",f"links HTTP {st} + auth/me dead")
+            _p(f"[x] links HTTP {st} (alive={_alive})")
         else:
             _sb_health("error",f"links HTTP {st}")
         return None,None,0,"",[]
@@ -1342,6 +1417,351 @@ def _push_multibot(path,caption,thumb=None,name="video.mp4"):
         except Exception:
             pass
         return _ac.get_event_loop().run_until_complete(_do())
+
+def _sb_config():
+    """config doc: {stage_ch: -100xxx} — Supabase se"""
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.config&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=20) as r:
+            docs=_j.loads(r.read().decode())
+        return (docs[0].get("state") or {}) if docs else {}
+    except Exception:
+        return {}
+
+def _queue_add(entry):
+    """queue entry push — progress id=queue {entries:[...]}"""
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.queue&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=20) as r:
+            docs=_j.loads(r.read().decode())
+        entries=(docs[0].get("state") or {}).get("entries",[]) if docs else []
+        entries=[e for e in entries if e.get("seq")!=entry.get("seq")]
+        entries.append(entry)
+        row={"id":"queue","state":{"entries":entries}}
+        url2=f"{_SBURL}/rest/v1/progress"
+        req2=_q.Request(url2,data=_j.dumps(row).encode(),method="POST",
+                       headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                "Content-Type":"application/json",
+                                "Prefer":"resolution=merge-duplicates"})
+        with _q.urlopen(req2,timeout=20) as r2:
+            return r2.status
+    except Exception:
+        return 0
+
+def _queue_entries():
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.queue&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=20) as r:
+            docs=_j.loads(r.read().decode())
+        return (docs[0].get("state") or {}).get("entries",[]) if docs else []
+    except Exception:
+        return []
+
+def _queue_update(entries):
+    try:
+        row={"id":"queue","state":{"entries":entries}}
+        url=f"{_SBURL}/rest/v1/progress"
+        req=_q.Request(url,data=_j.dumps(row).encode(),method="POST",
+                       headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}",
+                                "Content-Type":"application/json",
+                                "Prefer":"resolution=merge-duplicates"})
+        with _q.urlopen(req,timeout=20) as r:
+            return r.status
+    except Exception:
+        return 0
+
+def _claim_release(cid):
+    """fail hua claim wapas chhodo — agli run use kar sake"""
+    try:
+        _store.db.claims.delete_one({"_id":cid})
+    except Exception:
+        pass
+
+def _poster_post(entry):
+    """REAL channel pe post — user session se location-copy (instant, no re-upload)"""
+    if not (_KSESS and _KID and _KHASH):
+        return None,"poster: KEY_18 missing"
+    try:
+        from telethon import TelegramClient as _TLC
+        from telethon.sessions import StringSession as _TSS
+        from telethon.tl.types import InputDocumentFileLocation as _IDFL, DocumentAttributeFilename as _DAF
+        import base64 as _bb
+    except Exception as ex:
+        return None,f"poster imports: {str(ex)[:60]}"
+    fr=_bb.b64decode(entry.get("fr","")) if entry.get("fr") else b""
+    async def _do():
+        client=_TLC(_TSS(_KSESS),int(_KID),_KHASH)
+        try:
+            await client.connect()
+            ent=await client.get_entity(int(K2))
+            loc=_IDFL(id=int(entry["did"]),access_hash=int(entry["ah"]),file_reference=fr)
+            # thumb bhi attach (URL se download)
+            th=None
+            if entry.get("thumb") and str(entry["thumb"]).startswith("http"):
+                try:
+                    tp="/tmp/pthumb.jpg"
+                    with _q.urlopen(_q.Request(entry["thumb"],headers={"User-Agent":_UA}),timeout=60) as resp:
+                        with open(tp,"wb") as f:
+                            while True:
+                                c=resp.read(1<<20)
+                                if not c:
+                                    break
+                                f.write(c)
+                    if _o.path.getsize(tp)>=1000:
+                        th=tp
+                except Exception:
+                    th=None
+            media=_tlu.get_input_media(loc,force_document=True,
+                                       attributes=[_DAF(file_name=entry.get("name") or "video.mp4")])
+            msg=await client.send_file(ent,media,force_document=True,thumb=th or None,
+                                       caption=entry.get("caption") or "",parse_mode="html")
+            fid=""
+            if getattr(msg,"video",None) is not None:
+                fid=str(msg.video.id)
+            elif getattr(msg,"document",None) is not None:
+                fid=str(msg.document.id)
+            return {"message_id":msg.id,"video":{"file_id":fid}},None
+        except Exception as ex:
+            return None,f"poster fail: {str(ex)[:150]}"
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+    try:
+        return _ac.get_event_loop().run_until_complete(_do())
+    except RuntimeError:
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        return _ac.get_event_loop().run_until_complete(_do())
+
+def _flush_poster(my_seq, eid):
+    """ORDERED POSTING: jab tak previous posted nahi, wait; phir location-copy post.
+    Lock = mongo postctl (atomic) — koi bhi runner pending next post kar sakta hai (crash recovery)."""
+    try:
+        from pymongo import ReturnDocument as _RD
+    except Exception:
+        _RD=None
+    run_id=_o.environ.get("GITHUB_RUN_ID",str(_o.getpid()))
+    deadline=_t.time()+900  # 15 min max wait
+    while _t.time()<deadline:
+        try:
+            pc=_store.db.postctl.find_one({"_id":"post"}) or {"next_seq":1,"lock":"","lock_at":0}
+        except Exception:
+            _t.sleep(15)
+            continue
+        now=int(_t.time())
+        # lock acquire / takeover
+        try:
+            if pc.get("lock") and pc.get("lock_at") and now-pc["lock_at"]>=240:
+                _store.db.postctl.update_one({"_id":"post","lock":pc["lock"]},
+                                             {"$set":{"lock":run_id,"lock_at":now}})
+            elif not pc.get("lock"):
+                _store.db.postctl.update_one({"_id":"post","lock":""},
+                                             {"$set":{"lock":run_id,"lock_at":now}})
+            pc=_store.db.postctl.find_one({"_id":"post"}) or {}
+            if pc.get("lock")!=run_id:
+                _t.sleep(15)
+                continue
+        except Exception:
+            _t.sleep(15)
+            continue
+        # next_seq ka entry dhoondo
+        nxt=int(pc.get("next_seq") or 1)
+        entries=_queue_entries()
+        entry=next((e for e in entries if int(e.get("seq") or 0)==nxt and e.get("status")=="staged"),None)
+        if entry:
+            msg,err=_poster_post(entry)
+            if not msg:
+                _p(f"[!] poster post fail seq={nxt}: {err}")
+                try:
+                    _store.db.postctl.update_one({"_id":"post","lock":run_id},{"$set":{"lock":"","lock_at":0}})
+                except Exception:
+                    pass
+                _t.sleep(30)
+                continue
+            # save episode record (real channel mid)
+            meta=entry.get("meta") or {}
+            _doc={"id":entry.get("eid"),"show":meta.get("show_title",""),"franchise":meta.get("franchise",""),
+                  "season":meta.get("season"),"episode":meta.get("episode"),"title":meta.get("title",""),
+                  "quality":entry.get("q",""),"qualities":entry.get("quals",[]),
+                  "lang":meta.get("lang",""),"category":meta.get("category",""),
+                  "thumb":entry.get("thumb") or "","fid":(msg.get("video") or {}).get("file_id",""),
+                  "bot_fid":"","mid":msg.get("message_id"),
+                  "turl":_turl(msg.get("message_id")) if msg.get("message_id") else "",
+                  "perm":"","web":entry.get("web",""),"size":entry.get("size",0),"at":int(_t.time())}
+            try:
+                _store.save_item(_doc)
+            except Exception:
+                pass
+            try:
+                _sb_save(_doc)
+            except Exception:
+                pass
+            _p(f"[ok] ORDERED POST seq={nxt} mid={msg.get('message_id')}")
+            # entry posted mark
+            for e in entries:
+                if int(e.get("seq") or 0)==nxt:
+                    e["status"]="posted"
+            _queue_update(entries)
+            try:
+                _store.db.postctl.update_one({"_id":"post","lock":run_id},
+                                             {"$set":{"next_seq":nxt+1,"lock":"","lock_at":0}})
+            except Exception:
+                pass
+            if nxt==my_seq:
+                return msg,None  # hamara ho gaya
+            continue
+        else:
+            # entry nahi — wo episode pehle se posted? (purana) to skip
+            try:
+                cands=_all_ordered_candidates(_shows(_o.environ.get("KEY_6","").strip()))
+                if nxt-1 < len(cands):
+                    cid=cands[nxt-1]
+                    if cid in _store.done_ids():
+                        _store.db.postctl.update_one({"_id":"post","lock":run_id},
+                                                     {"$set":{"next_seq":nxt+1,"lock":"","lock_at":0}})
+                        continue
+            except Exception:
+                pass
+            try:
+                _store.db.postctl.update_one({"_id":"post","lock":run_id},{"$set":{"lock":"","lock_at":0}})
+            except Exception:
+                pass
+            _t.sleep(15)
+    return None,"flush timeout (15 min)"
+
+def _push_multibot_staged(path,caption,thumb=None,name="video.mp4",meta=None,eid="",seq=0,web="",size=0,q="",quals=None):
+    """MULTI-REPO STAGED UPLOAD:
+    1) stage channel pe multibot upload (parallel, fast)
+    2) queue entry save
+    3) ordered poster — real channel pe jab baari aaye (instant location-copy)
+    Isse order 100% preserved + uploads parallel."""
+    cfg=_sb_config()
+    stage_ch=cfg.get("stage_ch") or ""
+    if not stage_ch:
+        return None,"multibot staged: stage_ch config nahi hai (stage_setup.py chalao)"
+    try:
+        from telethon import TelegramClient as _TLC
+        from telethon.sessions import StringSession as _TSS
+        from telethon.tl.types import DocumentAttributeFilename as _DAF
+        from FastTelethon import upload_file_multi as _ft_multi
+        import base64 as _bb
+    except Exception as ex:
+        return None,f"staged imports: {str(ex)[:60]}"
+    # sessions
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.bot_sessions&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=30) as r:
+            docs=_j.loads(r.read().decode())
+        st=(docs[0].get("state") or {}) if docs else {}
+    except Exception as ex:
+        return None,f"staged sb: {str(ex)[:60]}"
+    bots={k:v for k,v in st.items() if isinstance(v,list) and len(v)>=2}
+    if not bots:
+        return None,"staged: no sessions"
+    keys=sorted(bots.keys())
+    bot=keys[sum(ord(c) for c in (name or "x"))%len(keys)]
+    sesses=bots[bot][:4]
+    n=len(sesses)
+    fsz=_o.path.getsize(path)
+    _p(f"[*] STAGED upload: {bot} x{n} | {fsz/(1024*1024):.0f} MB -> stage")
+    thumb_path=None
+    if thumb and str(thumb).startswith("http"):
+        try:
+            thumb_path="/tmp/thumb.jpg"
+            with _q.urlopen(_q.Request(thumb,headers={"User-Agent":_UA}),timeout=60) as resp:
+                with open(thumb_path,"wb") as f:
+                    while True:
+                        c=resp.read(1<<20)
+                        if not c:
+                            break
+                        f.write(c)
+            if _o.path.getsize(thumb_path)<1000:
+                thumb_path=None
+        except Exception:
+            thumb_path=None
+    async def _do():
+        clients=[]
+        try:
+            for ss in sesses:
+                c=_TLC(_TSS(ss),int(_KID),_KHASH,connection_retries=2)
+                await c.connect()
+                clients.append(c)
+            ent=await clients[0].get_entity(int(stage_ch))
+            _st=[_t.time(),0,0]
+            def _prog(c,t):
+                now=_t.time()
+                if now-_st[0]>=10 or c>=t:
+                    dt=now-_st[0]
+                    spd=((c-_st[1])/(1024*1024)/dt) if dt>0 else 0
+                    _st[0]=now;_st[1]=c
+                    _p(f"   upload {c*100//t}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | {spd:.1f} MB/s",flush=True)
+            conns=15 if n>=3 else 20
+            pkb=1024 if fsz>900*1024*1024 else None
+            with open(path,"rb") as fh:
+                up=await _ft_multi(clients,fh,progress_callback=_prog,
+                                   conns_per_client=conns,part_size_kb=pkb)
+            msg=await clients[0].send_file(ent,up,force_document=True,thumb=thumb_path or None,
+                                           attributes=[_DAF(file_name=name or "video.mp4")],
+                                           caption=f"STAGE seq={seq} {name}")
+            # location capture
+            doc=None
+            if getattr(msg,"video",None) is not None:
+                doc=getattr(msg,"video",None)
+            elif getattr(msg,"document",None) is not None:
+                doc=getattr(msg,"document",None)
+            if doc is None or not getattr(doc,"access_hash",None):
+                return None,"staged: location capture fail"
+            entry={"seq":int(seq),"eid":eid,"status":"staged","at":int(_t.time()),
+                   "did":str(doc.id),"ah":str(doc.access_hash),
+                   "fr":_bb.b64encode(doc.file_reference or b"").decode(),
+                   "dc":int(getattr(doc,"dc_id",0) or 0),
+                   "name":name or "video.mp4","thumb":thumb or "","caption":caption,
+                   "meta":meta or {},"web":web or "","size":int(size or fsz),
+                   "q":q,"quals":quals or []}
+            _queue_add(entry)
+            _p(f"[*] staged seq={seq} — poster wait")
+            return True,None
+        except Exception as ex:
+            return None,f"staged upload fail: {str(ex)[:200]}"
+        finally:
+            for c in clients:
+                try:
+                    await c.disconnect()
+                except Exception:
+                    pass
+    try:
+        r=_ac.get_event_loop().run_until_complete(_do())
+    except RuntimeError:
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+        except Exception:
+            pass
+        r=_ac.get_event_loop().run_until_complete(_do())
+    if not r or not r[0]:
+        return None, r[1] if r else "staged fail"
+    # ab flush — ordered poster
+    _p("[*] flush: ordered posting...")
+    msg,err=_flush_poster(int(seq), eid)
+    if not msg:
+        return None, err
+    fid=(msg.get("video") or {}).get("file_id","")
+    bfid=""
+    try:
+        if fid:
+            bfid=_bot_file_id(0,int(fid),0,b"") if False else ""
+    except Exception:
+        pass
+    return {"message_id":msg.get("message_id"),"video":{"file_id":fid},"bot":bot,"bot_fid":bfid},None
 
 def _push_pyrogram(path,caption,thumb=None,name="video.mp4"):
     """Pyrogram se concurrent upload (fast). 2GB limit."""
@@ -1755,6 +2175,17 @@ def main():
     if not K3:
         _p("missing KEY_3")
         _y.exit(1)
+    # PAUSE CHECK — har repo ke runs respect karein (worker + direct cron dono)
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.pause&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=20) as r:
+            _pd=_j.loads(r.read().decode())
+        if _pd and (_pd[0].get("state") or {}).get("paused"):
+            _p("[*] paused — run skip (dashboard se resume karo)")
+            _y.exit(0)
+    except Exception:
+        pass
     try:
         gm=_q.urlopen(f"{_TBASE}{K1}/getMe",timeout=30)
         gj=_j.loads(gm.read().decode())
@@ -1814,6 +2245,11 @@ def main():
     link,name,size,q,quals=_make_item_link(eid,meta.get("title","item"),se_tag)
     if not link:
         _sb_pick_clear()
+        try:
+            if _o.environ.get("MULTI_REPO","").strip()=="1":
+                _claim_release(eid)
+        except Exception:
+            pass
         _p("[x] link failed (KEY_3 stale?)")
         _y.exit(1)
     job=link.rstrip("/").split("/")[-1]
@@ -1828,6 +2264,11 @@ def main():
         if not results:
             _p("[x] split fail")
             _del_job(job)
+            try:
+                if _o.environ.get("MULTI_REPO","").strip()=="1":
+                    _claim_release(eid)
+            except Exception:
+                pass
             _y.exit(1)
         _p1=results[0]
         _turl1=f"https://t.me/c/{str(K2).replace('-100','')}/{_p1.get('mid',0)}"
@@ -1904,8 +2345,12 @@ def main():
                             break
                         f.write(c)
             _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
-            # MULTI-BOT sessions (same bot, split parts) PRIMARY — telethon/pyrogram fallback
-            if _KSESS and _KID and _KHASH:
+            # MULTI-REPO STAGED (parallel + ordered) ya normal multibot
+            if _o.environ.get("MULTI_REPO","").strip()=="1":
+                msg,err=_push_multibot_staged(tmp,cap,thumb,name=name or "video.mp4",
+                                              meta=meta,eid=eid,seq=int(pick.get("seq") or 0),
+                                              web=web,size=size or 0,q=q,quals=quals)
+            elif _KSESS and _KID and _KHASH:
                 msg,err=_push_multibot(tmp,cap,thumb,name=name or "video.mp4")
                 if not msg:
                     _p(f"[!] multibot fail ({err}) — telethon fallback...")
@@ -1954,6 +2399,11 @@ def main():
             _p(f"[x] push fail (attempt {_att}): {err}")
             _del_job(job)
             if _att>=_ATT:
+                try:
+                    if _o.environ.get("MULTI_REPO","").strip()=="1":
+                        _claim_release(eid)
+                except Exception:
+                    pass
                 _y.exit(1)
             continue
         break
