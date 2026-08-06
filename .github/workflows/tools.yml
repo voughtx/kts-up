@@ -58,7 +58,7 @@ on:
         required: false
         default: ""
 concurrency:
-  group: run-task
+  group: tools-task
   cancel-in-progress: false
 permissions:
   contents: write
