@@ -244,6 +244,7 @@ async def _internal_transfer_to_telegram(client: TelegramClient,
                                          response: BinaryIO,
                                          progress_callback: callable,
                                          connection_count: Optional[int] = None,
+                                         part_size_kb: Optional[float] = None,
                                          ) -> Tuple[TypeInputFile, int]:
     file_id = helpers.generate_random_long()
     file_size = os.path.getsize(response.name)
@@ -251,6 +252,7 @@ async def _internal_transfer_to_telegram(client: TelegramClient,
     hash_md5 = hashlib.md5()
     uploader = ParallelTransferrer(client)
     part_size, part_count, is_large = await uploader.init_upload(file_id, file_size,
+                                                                 part_size_kb=part_size_kb,
                                                                  connection_count=connection_count)
     buffer = bytearray()
     for data in stream_file(response):
@@ -305,6 +307,7 @@ async def upload_file(client: TelegramClient,
                       file: BinaryIO,
                       progress_callback: callable = None,
                       connection_count: Optional[int] = None,
+                      part_size_kb: Optional[float] = None,
                       ) -> TypeInputFile:
-    res = (await _internal_transfer_to_telegram(client, file, progress_callback, connection_count))[0]
+    res = (await _internal_transfer_to_telegram(client, file, progress_callback, connection_count, part_size_kb))[0]
     return res
