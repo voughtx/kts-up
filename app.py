@@ -1176,7 +1176,6 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
                 from telethon.tl.types import DocumentAttributeFilename as _DAF
                 with open(path,"rb") as _fh:
                     up=await _ft_upload(client,_fh,progress_callback=_prog)
-                # FastTelethon bare InputFile deta hai — filename attribute add karo (warna "upload" naam)
                 up=_tlu.get_input_media(up,force_document=True,attributes=[_DAF(file_name=name or "video.mp4")])
             except Exception as _ex:
                 _p(f"[!] FastTelethon fail ({str(_ex)[:60]}) — normal upload fallback")
@@ -1310,9 +1309,8 @@ def _push_multibot(path,caption,thumb=None,name="video.mp4"):
             with open(path,"rb") as fh:
                 up=await _ft_multi(clients,fh,progress_callback=_prog,
                                    conns_per_client=conns,part_size_kb=pkb)
-            media=_tlu.get_input_media(up,force_document=True,
-                                       attributes=[_DAF(file_name=name or "video.mp4")])
-            msg=await clients[0].send_file(ent,media,force_document=True,thumb=thumb_path or None,
+            msg=await clients[0].send_file(ent,up,force_document=True,thumb=thumb_path or None,
+                                           attributes=[_DAF(file_name=name or "video.mp4")],
                                            caption=caption,parse_mode="html")
             fid=""
             bfid=""
@@ -1797,34 +1795,35 @@ def main():
         _advance(pick)
         _p("\n[ok] done (split). saved.")
         return
-    st_msg=""
-    try:
-        sl=pick.get("seasons") or []
-        el=pick.get("eps") or []
-        csn=sl[pick["si"]].get("seasonNumber") if pick.get("si") is not None and sl else None
-        cen=(pick.get("ep") or {}).get("episodeNumber")
-        l1=f"\U0001F4C0 {meta.get('show_title') or ''}".strip()
-        l2=""
-        if csn is not None:
-            l2+=f"S{csn} - {len(sl)}"
-        if cen is not None:
-            l2+=f" | E{cen} - {len(el)}"
-        st_msg=l1+(f"\n\u21B3 {l2}" if l2 else "")
-        if not st_msg:
-            st_msg="\U0001F4C0 Processing..."
-    except Exception:
-        st_msg=f"\U0001F4C0 {meta.get('show_title') or 'Processing...'}"
+    # STATUS MESSAGE: default OFF — channel mein extra messages nahi chahiye
+    # (STATUS_MSG=1 env se on kar sakte ho agar kabhi chahiye)
     st_mid=None
-    try:
-        resp=_q.urlopen(_q.Request(f"{_TBASE}{K1}/sendMessage",data=_u.urlencode({"chat_id":K2,"text":st_msg}).encode(),method="POST"),timeout=30)
-        jm=_j.loads(resp.read().decode())
-        if jm.get("ok"):
-            st_mid=jm["result"].get("message_id")
-            _p("[dbg] status message sent")
-    except _e.HTTPError as ex:
-        _p(f"[dbg] status msg fail: HTTP {ex.code}: {ex.read().decode()[:150]}")
-    except Exception as ex:
-        _p(f"[dbg] status msg fail: {str(ex)[:120]}")
+    st_msg=""
+    if _o.environ.get("STATUS_MSG","").strip()=="1":
+        try:
+            sl=pick.get("seasons") or []
+            el=pick.get("eps") or []
+            csn=sl[pick["si"]].get("seasonNumber") if pick.get("si") is not None and sl else None
+            cen=(pick.get("ep") or {}).get("episodeNumber")
+            l1=f"\U0001F4C0 {meta.get('show_title') or ''}".strip()
+            l2=""
+            if csn is not None:
+                l2+=f"S{csn} - {len(sl)}"
+            if cen is not None:
+                l2+=f" | E{cen} - {len(el)}"
+            st_msg=l1+(f"\n\u21B3 {l2}" if l2 else "")
+            if not st_msg:
+                st_msg="\U0001F4C0 Processing..."
+        except Exception:
+            st_msg=f"\U0001F4C0 {meta.get('show_title') or 'Processing...'}"
+        try:
+            resp=_q.urlopen(_q.Request(f"{_TBASE}{K1}/sendMessage",data=_u.urlencode({"chat_id":K2,"text":st_msg}).encode(),method="POST"),timeout=30)
+            jm=_j.loads(resp.read().decode())
+            if jm.get("ok"):
+                st_mid=jm["result"].get("message_id")
+                _p("[dbg] status message sent")
+        except Exception as ex:
+            _p(f"[dbg] status msg fail: {str(ex)[:120]}")
 
     _ATT=3
     for _att in range(1,_ATT+1):
@@ -1911,7 +1910,7 @@ def main():
         fid=msg["video"].get("file_id","")
     bot_fid_cap=msg.get("bot_fid","")
     mid=msg.get("message_id")
-    if st_mid:
+    if st_mid and st_msg:
         try:
             _q.urlopen(_q.Request(f"{_TBASE}{K1}/editMessageText",
                 data=_u.urlencode({"chat_id":K2,"message_id":st_mid,
