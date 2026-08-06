@@ -139,11 +139,25 @@ async def main():
 
     async def session_job(i):
         app = apps[i]
+        ch = None
         try:
             ch = await app.get_chat(int(K2))
         except Exception as e:
-            print(f"   [session {i}] get_chat fail: {str(e)[:60]}")
-            ch = None
+            # bots: peer cache nahi — channel post ko bot ke DM mein forward karke peer resolve
+            if i > 0:
+                try:
+                    bot_me = await app.get_me()
+                    fm = await apps[0].forward_messages(bot_me.username or f"bot{i}", cid, [SRC_MID])
+                    fm_id = fm[0].id if isinstance(fm, list) else fm.id
+                    dm_msg = await app.get_messages("me", fm_id)
+                    fwd = dm_msg.forward_from_chat
+                    if fwd:
+                        ch = await app.get_chat(fwd.id)
+                        print(f"   [session {i}] peer resolved via forward ({fwd.id})")
+                except Exception as e2:
+                    print(f"   [session {i}] peer resolve fail: {str(e2)[:70]}")
+            else:
+                print(f"   [session {i}] get_chat fail: {str(e)[:60]}")
         if ch is None:
             return None
         try:
