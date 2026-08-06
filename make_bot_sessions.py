@@ -18,8 +18,8 @@ SBURL = os.environ.get("KEY_20", "").strip()
 SBKEY = os.environ.get("KEY_21", "").strip()
 BOT_TOKENS = [os.environ.get(f"KEY_{i}", "").strip() for i in range(22, 28)]
 BOT_TOKENS = [t for t in BOT_TOKENS if t]
-PER_BOT = int(os.environ.get("PER_BOT", "2").strip())
-PAUSE = int(os.environ.get("PAUSE_S", "45").strip())
+PER_BOT = int(os.environ.get("PER_BOT", "4").strip())
+PAUSE = int(os.environ.get("PAUSE_S", "30").strip())
 
 def sb_get():
     try:
