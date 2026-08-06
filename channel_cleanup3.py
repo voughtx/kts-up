@@ -1,5 +1,4 @@
-# channel_cleanup2.py — 557-573 delete (S1E11-19 no-thumb) + DB records
-# User: "thumbnail wale jo nhi ho paye unhe yaha tak delete karo, re-upload karenge"
+# channel_cleanup3.py — 574 (S1E20) delete, taaki E11-E20 sab fresh order mein upload ho
 import os, sys, asyncio, json, urllib.request
 
 try:
@@ -16,7 +15,7 @@ AHASH = os.environ.get("KEY_17", "").strip()
 SS = os.environ.get("KEY_18", "").strip()
 SBURL = os.environ.get("KEY_20", "").strip().rstrip("/")
 SBKEY = os.environ.get("KEY_21", "").strip()
-MIDS = list(range(557, 574))  # 557..573 (9 no-thumb episodes)
+MID = 574
 
 def sb_fetch():
     url = f"{SBURL}/rest/v1/episodes?select=id,mid,title,season,episode&limit=1000"
@@ -47,33 +46,27 @@ def mongo_delete(eids):
         print(f"[!] mongo fail: {str(e)[:100]}", flush=True)
 
 async def main():
-    print(f"[*] deleting channel msgs {MIDS[0]}..{MIDS[-1]} + DB records", flush=True)
+    print(f"[*] deleting msg {MID} + DB record", flush=True)
     c = TelegramClient(StringSession(SS), AID, AHASH)
     await c.connect()
     ch = await c.get_entity(int(CHAT))
-    msgs = await c.get_messages(ch, ids=MIDS)
-    n = 0
+    msgs = await c.get_messages(ch, ids=[MID])
     for m in msgs:
         if m is None:
             continue
-        n += 1
-        fn = ""
-        if m.document and m.document.attributes:
-            fn = m.document.attributes[0].file_name
-        print(f"  {m.id}: {fn[:50]} | {(m.message or '')[:35]}", flush=True)
-    res = await c.delete_messages(ch, MIDS)
-    print(f"[ok] channel deleted: {n} -> {res}", flush=True)
+        fn = m.document.attributes[0].file_name if m.document and m.document.attributes else ""
+        print(f"  {m.id}: {fn[:50]}", flush=True)
+    res = await c.delete_messages(ch, [MID])
+    print(f"[ok] channel deleted: {res}", flush=True)
     await c.disconnect()
 
     rows = sb_fetch()
-    targets = [r for r in rows if r.get("mid") in MIDS]
-    print(f"[*] db records found: {len(targets)}", flush=True)
+    targets = [r for r in rows if r.get("mid") == MID]
     ids = [r["id"] for r in targets]
-    for r in sorted(targets, key=lambda x: x.get("mid") or 0):
-        print(f"  {r.get('mid')}: S{r.get('season')}E{r.get('episode')} {r.get('id','')[:14]}", flush=True)
+    for r in targets:
+        print(f"  db: S{r.get('season')}E{r.get('episode')} {r.get('id','')[:14]}", flush=True)
     for eid in ids:
-        st = sb_delete(eid)
-        print(f"  supabase del {eid[:12]}: {st}", flush=True)
+        print(f"  supabase del {eid[:12]}: {sb_delete(eid)}", flush=True)
     mongo_delete(ids)
     print("[done]", flush=True)
 

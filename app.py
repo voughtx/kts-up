@@ -1596,16 +1596,18 @@ def _auto_continue():
         return
     gh=_o.environ.get("GITHUB_TOKEN","").strip()
     repo=_o.environ.get("GITHUB_REPOSITORY","").strip()
+    my_sha=_o.environ.get("GITHUB_SHA","").strip()  # apna commit — khud ko active na samjhe
     if not gh or not repo:
         _p("[!] auto-continue: GITHUB_TOKEN/REPOSITORY missing")
         return
-    # koi run already active to mat dispatch karo
+    # koi AUR run active to mat dispatch karo (same commit wala = khud, exclude)
     try:
-        req=_q.Request(f"https://api.github.com/repos/{repo}/actions/runs?per_page=5",
+        req=_q.Request(f"https://api.github.com/repos/{repo}/actions/runs?per_page=10",
                        headers={"Authorization":f"Bearer {gh}","Accept":"application/vnd.github+json"})
         with _q.urlopen(req,timeout=20) as r:
             runs=_j.loads(r.read().decode()).get("workflow_runs",[])
-        active=[x for x in runs if x.get("status") in ("in_progress","queued")]
+        active=[x for x in runs if x.get("status") in ("in_progress","queued")
+                and x.get("head_sha","")!=my_sha]
         if active:
             _p(f"[*] run already active ({active[0].get('id')}) — skip")
             return
