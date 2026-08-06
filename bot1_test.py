@@ -1,21 +1,22 @@
-# bot1_test.py v5 — bot updates ENABLED (no_updates=False) + wait -> peer register -> GetFile
+# bot1_test.py v6 — bot1 max speed: updates ON + forward + parallel x8 GetFile
 import os, time, asyncio
 from pyrogram import Client
 from pyrogram.raw.functions.upload import GetFile
 from pyrogram.raw.types import InputDocumentFileLocation
 from pyrogram.utils import FileId
-from pyrogram import filters
 
 K2 = os.environ.get("KEY_2", "").strip()
 PSESS = os.environ.get("KEY_19", "").strip()
 AID = os.environ.get("KEY_16", "").strip()
 AHASH = os.environ.get("KEY_17", "").strip()
 BOT1_TOKEN = os.environ.get("KEY_22", "").strip()
-SRC_MID = int(os.environ.get("MIDS", "441").split(",")[0])
+SRC_MID = int(os.environ.get("MIDS", "476").split(",")[0] if os.environ.get("MIDS","476").split(",")[0] else 441)
 MB = 1024 * 1024
+WORKERS = 8
+TARGET_MB = 100  # 100MB test
 
 async def main():
-    print(f"[*] bot1 token len: {len(BOT1_TOKEN)}")
+    print(f"[*] bot1 max speed test | workers={WORKERS} | target={TARGET_MB}MB")
     user = Client("u1", api_id=int(AID), api_hash=AHASH, session_string=PSESS, no_updates=True)
     await user.start()
     try:
@@ -31,68 +32,71 @@ async def main():
         await user.stop()
         return
     ucid = uchat.id if hasattr(uchat, "id") else uchat
-    print(f"[*] user chat: {uchat.title}")
 
-    # bot1 — updates ENABLED (peer register hone de)
-    bot = Client("b1u", api_id=int(AID), api_hash=AHASH, bot_token=BOT1_TOKEN)
+    bot = Client("b1u", api_id=int(AID), api_hash=AHASH, bot_token=BOT1_TOKEN)  # updates ON
     await bot.start()
     me = await bot.get_me()
     print(f"[*] bot1 connected (updates ON): @{me.username}")
 
-    # user se channel post bot ke DM forward karo (update trigger)
+    # forward + wait peer register
     try:
-        fm = await user.forward_messages(me.username or "me", ucid, [SRC_MID])
-        print(f"[1] forward OK")
+        await user.forward_messages(me.username or "me", ucid, [SRC_MID])
+        print("[1] forward OK")
     except Exception as e:
-        print(f"[1] forward fail: {str(e)[:70]}")
+        print(f"[1] forward fail: {str(e)[:60]}")
+    await asyncio.sleep(5)
 
-    # updates process hone ka wait (2 round)
-    for w in (5, 10):
-        print(f"[*] waiting {w}s for updates...")
-        await asyncio.sleep(w)
-        try:
-            ch = await bot.get_chat(int(K2))
-            print(f"[2] get_chat: OK {ch.title}")
-            break
-        except Exception as e:
-            print(f"[2] get_chat FAIL after {w}s: {str(e)[:50]}")
-    else:
-        await user.stop()
-        await bot.stop()
-        return
-
+    ch = await bot.get_chat(int(K2))
+    print(f"[2] get_chat: OK {ch.title}")
     cid = ch.id if hasattr(ch, "id") else ch
-    try:
-        m = await bot.get_messages(cid, SRC_MID)
-        print(f"[3] get_messages: doc={m.document is not None}")
-    except Exception as e:
-        print(f"[3] get_messages FAIL: {str(e)[:60]}")
-        await user.stop()
-        await bot.stop()
-        return
+    m = await bot.get_messages(cid, SRC_MID)
     if m.empty or not m.document:
         print("[3] no doc")
         await user.stop()
         await bot.stop()
         return
+    want = m.document.file_size
+    print(f"[3] file: {want/MB:.0f} MB")
 
     fid = FileId.decode(m.document.file_id)
     loc = InputDocumentFileLocation(id=fid.media_id, access_hash=fid.access_hash,
                                     file_reference=fid.file_reference or b"", thumb_size="")
-    off, got, t0 = 0, 0, time.time()
-    try:
-        while off < 5 * MB:
-            res = await bot.invoke(GetFile(location=loc, offset=off, limit=MB, precise=1, cdn_supported=True))
-            data = res.bytes
-            if not data:
-                print(f"[4] empty at {off}")
-                break
-            got += len(data)
-            off += len(data)
-        dt = time.time() - t0
-        print(f"[4] download: {got/MB:.1f} MB in {dt:.1f}s = {got/dt/MB:.2f} MB/s")
-    except Exception as e:
-        print(f"[4] GetFile FAIL: {str(e)[:100]}")
+    target = min(TARGET_MB * MB, want)
+    per = target // WORKERS // MB * MB
+    if per < MB:
+        per = MB
+    ranges = []
+    start = 0
+    for i in range(WORKERS):
+        end = target if i == WORKERS - 1 else start + per
+        ranges.append((start, end))
+        start = end
+    t0 = time.time()
+
+    async def worker(i, a, b):
+        off = a
+        got = 0
+        with open(f"/tmp/bw_{i}.bin", "wb") as f:
+            while off < b:
+                res = await bot.invoke(GetFile(location=loc, offset=off, limit=MB, precise=1, cdn_supported=True))
+                data = res.bytes
+                if not data:
+                    break
+                w = min(len(data), b - off)
+                f.write(data[:w])
+                off += w
+                got += w
+        return got
+
+    results = await asyncio.gather(*[worker(i, a, b) for i, (a, b) in enumerate(ranges)])
+    dt = time.time() - t0
+    total = sum(results)
+    print(f"[4] download: {total/MB:.0f} MB in {dt:.1f}s = {total/dt/MB:.2f} MB/s (workers={WORKERS})")
+    for i in range(WORKERS):
+        try:
+            os.remove(f"/tmp/bw_{i}.bin")
+        except Exception:
+            pass
 
     await user.stop()
     await bot.stop()
