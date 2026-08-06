@@ -23,13 +23,13 @@ except ImportError:
     _s.check_call([_y.executable,"-m","pip","install","-q","requests"])
     import requests as _req
 try:
-    from telethon import TelegramClient
+    from telethon import TelegramClient, utils as _tlu
     from telethon.sessions import StringSession
     _HAS_TT=True
 except ImportError:
     try:
         _s.check_call([_y.executable,"-m","pip","install","-q","telethon"])
-        from telethon import TelegramClient
+        from telethon import TelegramClient, utils as _tlu
         from telethon.sessions import StringSession
         _HAS_TT=True
     except Exception:
@@ -1173,8 +1173,11 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             # FastTelethon parallel upload (multiple connections — 3-5x fast)
             try:
                 from FastTelethon import upload_file as _ft_upload
+                from telethon.tl.types import DocumentAttributeFilename as _DAF
                 with open(path,"rb") as _fh:
                     up=await _ft_upload(client,_fh,progress_callback=_prog)
+                # FastTelethon bare InputFile deta hai — filename attribute add karo (warna "upload" naam)
+                up=_tlu.get_input_media(up,force_document=True,attributes=[_DAF(file_name=name or "video.mp4")])
             except Exception as _ex:
                 _p(f"[!] FastTelethon fail ({str(_ex)[:60]}) — normal upload fallback")
                 up=await client.upload_file(path,part_size_kb=1024,file_name=name,
