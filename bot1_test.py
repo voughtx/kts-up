@@ -1,15 +1,16 @@
-# bot1_test.py v4 — EXACT bot_peer_cache pattern (jo kaam kiya tha) — sirf bot1, token se
+# bot1_test.py v5 — bot updates ENABLED (no_updates=False) + wait -> peer register -> GetFile
 import os, time, asyncio
 from pyrogram import Client
 from pyrogram.raw.functions.upload import GetFile
 from pyrogram.raw.types import InputDocumentFileLocation
 from pyrogram.utils import FileId
+from pyrogram import filters
 
 K2 = os.environ.get("KEY_2", "").strip()
 PSESS = os.environ.get("KEY_19", "").strip()
 AID = os.environ.get("KEY_16", "").strip()
 AHASH = os.environ.get("KEY_17", "").strip()
-BOT1_TOKEN = os.environ.get("KEY_22", "").strip()  # bot1 TOKEN
+BOT1_TOKEN = os.environ.get("KEY_22", "").strip()
 SRC_MID = int(os.environ.get("MIDS", "441").split(",")[0])
 MB = 1024 * 1024
 
@@ -32,30 +33,34 @@ async def main():
     ucid = uchat.id if hasattr(uchat, "id") else uchat
     print(f"[*] user chat: {uchat.title}")
 
-    # bot1 token se fresh client (bot_peer_cache jaisa hi)
-    bot = Client("b1t", api_id=int(AID), api_hash=AHASH, bot_token=BOT1_TOKEN, no_updates=True)
+    # bot1 — updates ENABLED (peer register hone de)
+    bot = Client("b1u", api_id=int(AID), api_hash=AHASH, bot_token=BOT1_TOKEN)
     await bot.start()
     me = await bot.get_me()
-    print(f"[*] bot1 connected (token): @{me.username}")
+    print(f"[*] bot1 connected (updates ON): @{me.username}")
 
-    # STEP 1: channel post -> bot DM forward (exact bot_peer_cache)
+    # user se channel post bot ke DM forward karo (update trigger)
     try:
         fm = await user.forward_messages(me.username or "me", ucid, [SRC_MID])
         print(f"[1] forward OK")
     except Exception as e:
         print(f"[1] forward fail: {str(e)[:70]}")
 
-    # STEP 2: get_chat (bot_peer_cache mein yahi kaam kiya tha)
-    try:
-        ch = await bot.get_chat(int(K2))
-        print(f"[2] get_chat: OK {ch.title}")
-    except Exception as e:
-        print(f"[2] get_chat FAIL: {str(e)[:60]}")
+    # updates process hone ka wait (2 round)
+    for w in (5, 10):
+        print(f"[*] waiting {w}s for updates...")
+        await asyncio.sleep(w)
+        try:
+            ch = await bot.get_chat(int(K2))
+            print(f"[2] get_chat: OK {ch.title}")
+            break
+        except Exception as e:
+            print(f"[2] get_chat FAIL after {w}s: {str(e)[:50]}")
+    else:
         await user.stop()
         await bot.stop()
         return
 
-    # STEP 3: get_messages + download 5MB
     cid = ch.id if hasattr(ch, "id") else ch
     try:
         m = await bot.get_messages(cid, SRC_MID)
