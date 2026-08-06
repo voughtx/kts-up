@@ -78,9 +78,10 @@ async def main():
     if bot:
         print(f"\n[*] E2: {bot[0]} 2 sessions x 10 conns", flush=True)
         clients = []
-        for ss in bot[1]:
+        for i, ss in enumerate(bot[1]):
             c = TelegramClient(StringSession(ss), AID, AHASH)
             await c.connect()
+            print(f"  sess{i+1} dc={c.session.dc_id}", flush=True)
             clients.append(c)
         await run_test("E2", clients, "/tmp/t4.bin", 10, "t4.bin")
         for c in clients:
@@ -88,9 +89,10 @@ async def main():
 
         print(f"\n[*] E3: {bot[0]} 2 sessions x 15 conns", flush=True)
         clients = []
-        for ss in bot[1]:
+        for i, ss in enumerate(bot[1]):
             c = TelegramClient(StringSession(ss), AID, AHASH)
             await c.connect()
+            print(f"  sess{i+1} dc={c.session.dc_id}", flush=True)
             clients.append(c)
         await run_test("E3", clients, "/tmp/t4.bin", 15, "t4.bin")
         for c in clients:

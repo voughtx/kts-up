@@ -333,9 +333,12 @@ async def upload_file_multi(clients: List[TelegramClient],
 
     n = len(clients)
     bounds = [(part_count * i // n, part_count * (i + 1) // n) for i in range(n)]
+    # SAB sessions ek hi DC pe upload karein (warna parts alag DC storage mein
+    # chale jaate hain aur SendMedia pe "part missing" error aata hai)
+    target_dc = clients[0].session.dc_id
     transferrers = []
     for c in clients:
-        pt = ParallelTransferrer(c)
+        pt = ParallelTransferrer(c, dc_id=target_dc)
         await pt._init_upload(conns_per_client, file_id, part_count, is_large)
         transferrers.append(pt)
 
