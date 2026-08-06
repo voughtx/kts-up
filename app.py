@@ -1713,12 +1713,17 @@ def main():
                             break
                         f.write(c)
             _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
-            msg,err=_push_pyrogram(tmp,cap,thumb,name=name or "video.mp4")
-            if not msg and _KSESS and not _NOFB:
-                _p(f"[!] pyrogram fail ({err}) — telethon fallback...")
+            # FastTelethon (parallel) PRIMARY — pyrogram fallback
+            if _KSESS and _KID and _KHASH:
                 msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
-            elif not msg and _NOFB:
-                _p(f"[!] pyrogram fail ({err}) — NO_FALLBACK on, telethon skip")
+                if not msg and _PSESS and not _NOFB:
+                    _p(f"[!] telethon fail ({err}) — pyrogram fallback...")
+                    msg,err=_push_pyrogram(tmp,cap,thumb,name=name or "video.mp4")
+            else:
+                msg,err=_push_pyrogram(tmp,cap,thumb,name=name or "video.mp4")
+                if not msg and _KSESS and not _NOFB:
+                    _p(f"[!] pyrogram fail ({err}) — telethon fallback...")
+                    msg,err=_push_telethon(tmp,cap,thumb,name=name or "video.mp4")
             try:
                 _o.remove(tmp)
             except Exception:
