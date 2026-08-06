@@ -26,9 +26,19 @@ def main():
     print(f"[*] token: ...{TOKEN[-6:]}")
     # source repo public key (encrypt ke liye kisi bhi repo ki chalega — same org)
     st, b = gh("GET", "/repos/voughtx/kts-up/actions/secrets/public-key")
+    if st != 200:
+        print(f"[x] pubkey fetch: HTTP {st} {b[:200]}")
+        return
     pk = json.loads(b)
     key = public.PublicKey(pk["key"], encoding.Base64Encoder())
     print(f"[*] pubkey: {pk['key_id']}")
+    # ratelimit info
+    try:
+        st3, b3 = gh("GET", "/rate_limit")
+        rl = json.loads(b3).get("resources", {}).get("core", {})
+        print(f"[*] rate: {rl.get('remaining')}/{rl.get('limit')} reset={rl.get('reset')}")
+    except Exception:
+        pass
     copied, skipped = 0, 0
     for target in TARGETS:
         print(f"\n=== {target} ===")
