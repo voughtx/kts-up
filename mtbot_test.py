@@ -106,7 +106,8 @@ async def main():
         print("[x] chat fail")
         await asyncio.gather(*[a.stop() for a in apps])
         return
-    m = await apps[0].get_messages(chat.id if hasattr(chat, "id") else chat, SRC_MID)
+    cid = chat.id if hasattr(chat, "id") else chat
+    m = await apps[0].get_messages(cid, SRC_MID)
     if m.empty or not m.document:
         print("[x] no doc")
         await asyncio.gather(*[a.stop() for a in apps])
