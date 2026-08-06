@@ -1573,6 +1573,54 @@ def _relay_cleanup(tag):
     _s.run(["gh","release","delete",tag,"--yes","--repo",repo],capture_output=True,text=True)
     _p(f"[ok] relay release {tag} deleted")
 
+def _auto_continue():
+    """Speed mode: run complete hone ke ~60s baad agli run dispatch kar deta hai
+    (agar pause nahi). Cron 5-min ka wait nahi karna padta. AUTO_CONTINUE=0 se off."""
+    if _o.environ.get("AUTO_CONTINUE","1").strip()!="1":
+        return
+    _p("[*] auto-continue: 60s mein agli run dispatch...")
+    _t.sleep(60)
+    # pause check (Supabase)
+    paused=False
+    try:
+        url=f"{_SBURL}/rest/v1/progress?select=state&id=eq.pause&limit=1"
+        req=_q.Request(url,headers={"apikey":_SBKEY,"Authorization":f"Bearer {_SBKEY}"})
+        with _q.urlopen(req,timeout=20) as r:
+            docs=_j.loads(r.read().decode())
+        if docs and (docs[0].get("state") or {}).get("paused"):
+            paused=True
+    except Exception:
+        pass
+    if paused:
+        _p("[*] paused — auto-continue skip (cron resume pe dekh lega)")
+        return
+    gh=_o.environ.get("GITHUB_TOKEN","").strip()
+    repo=_o.environ.get("GITHUB_REPOSITORY","").strip()
+    if not gh or not repo:
+        _p("[!] auto-continue: GITHUB_TOKEN/REPOSITORY missing")
+        return
+    # koi run already active to mat dispatch karo
+    try:
+        req=_q.Request(f"https://api.github.com/repos/{repo}/actions/runs?per_page=5",
+                       headers={"Authorization":f"Bearer {gh}","Accept":"application/vnd.github+json"})
+        with _q.urlopen(req,timeout=20) as r:
+            runs=_j.loads(r.read().decode()).get("workflow_runs",[])
+        active=[x for x in runs if x.get("status") in ("in_progress","queued")]
+        if active:
+            _p(f"[*] run already active ({active[0].get('id')}) — skip")
+            return
+    except Exception as ex:
+        _p(f"[!] gh runs check fail: {str(ex)[:60]}")
+    try:
+        body=_j.dumps({"event_type":"run-task"}).encode()
+        req=_q.Request(f"https://api.github.com/repos/{repo}/dispatches",data=body,method="POST",
+                       headers={"Authorization":f"Bearer {gh}","Accept":"application/vnd.github+json",
+                                "Content-Type":"application/json"})
+        with _q.urlopen(req,timeout=20) as r:
+            _p(f"[ok] auto-continue: next run dispatched ({r.status})")
+    except Exception as ex:
+        _p(f"[!] auto-continue dispatch fail: {str(ex)[:80]}")
+
 def _push(url,caption,thumb=None,fname=None):
     api=f"{_TBASE}{K1}/sendDocument"
     payload={"chat_id":K2,"document":url,"caption":caption,"parse_mode":"HTML"}
@@ -1794,6 +1842,10 @@ def main():
         _sb_health("ok","split")
         _advance(pick)
         _p("\n[ok] done (split). saved.")
+        try:
+            _auto_continue()
+        except Exception as _ex:
+            _p(f"[!] auto-continue err: {str(_ex)[:80]}")
         return
     # STATUS MESSAGE: default OFF — channel mein extra messages nahi chahiye
     # (STATUS_MSG=1 env se on kar sakte ho agar kabhi chahiye)
@@ -1993,6 +2045,10 @@ def main():
     _sb_pick_clear()
     _sb_health("ok")
     _advance(pick)
+    try:
+        _auto_continue()
+    except Exception as _ex:
+        _p(f"[!] auto-continue err: {str(_ex)[:80]}")
 if __name__=="__main__":
     try:
         main()
