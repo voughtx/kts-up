@@ -337,9 +337,13 @@ async def upload_file_multi(clients: List[TelegramClient],
     # chale jaate hain aur SendMedia pe "part missing" error aata hai)
     target_dc = clients[0].session.dc_id
     transferrers = []
-    for c in clients:
+    for c, (a, b) in zip(clients, bounds):
         pt = ParallelTransferrer(c, dc_id=target_dc)
         await pt._init_upload(conns_per_client, file_id, part_count, is_large)
+        # CRITICAL: har transferrer ke senders apne parts 0 se shuru karte hain —
+        # range ke start index pe offset karo (warna parts overwrite/missing)
+        for s in pt.senders:
+            s.request.file_part += a
         transferrers.append(pt)
 
     done = [0]
