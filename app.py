@@ -987,7 +987,7 @@ def _pick(shows,done):
     if _ITEM:
         m=_meta(_ITEM)
         return {"id":_ITEM,"meta":m,"ovr":True}
-    if _o.environ.get("MULTI_REPO","").strip()=="1":
+    if _o.environ.get("MULTI_REPO","1").strip()=="1":
         cands=_all_ordered_candidates(shows)
         cid,seq=_claim_next(cands,done)
         if cid is None:
@@ -2246,7 +2246,7 @@ def main():
     if not link:
         _sb_pick_clear()
         try:
-            if _o.environ.get("MULTI_REPO","").strip()=="1":
+            if _o.environ.get("MULTI_REPO","1").strip()=="1":
                 _claim_release(eid)
         except Exception:
             pass
@@ -2265,7 +2265,7 @@ def main():
             _p("[x] split fail")
             _del_job(job)
             try:
-                if _o.environ.get("MULTI_REPO","").strip()=="1":
+                if _o.environ.get("MULTI_REPO","1").strip()=="1":
                     _claim_release(eid)
             except Exception:
                 pass
@@ -2346,7 +2346,7 @@ def main():
                         f.write(c)
             _p(f"   {_o.path.getsize(tmp)/(1024*1024):.0f} MB")
             # MULTI-REPO STAGED (parallel + ordered) ya normal multibot
-            if _o.environ.get("MULTI_REPO","").strip()=="1":
+            if _o.environ.get("MULTI_REPO","1").strip()=="1":
                 msg,err=_push_multibot_staged(tmp,cap,thumb,name=name or "video.mp4",
                                               meta=meta,eid=eid,seq=int(pick.get("seq") or 0),
                                               web=web,size=size or 0,q=q,quals=quals)
@@ -2400,7 +2400,7 @@ def main():
             _del_job(job)
             if _att>=_ATT:
                 try:
-                    if _o.environ.get("MULTI_REPO","").strip()=="1":
+                    if _o.environ.get("MULTI_REPO","1").strip()=="1":
                         _claim_release(eid)
                 except Exception:
                     pass
