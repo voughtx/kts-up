@@ -339,14 +339,31 @@ async def upload_file_multi(clients: List[TelegramClient],
             all_senders.append((c, s))
 
     ticker = 0
+    buffer = bytearray()
     for data in stream_file(file):
         if progress_callback:
             r = progress_callback(file.tell(), file_size)
             if inspect.isawaitable(r):
                 await r
+        if len(buffer) == 0 and len(data) == part_size:
+            _, sender = all_senders[ticker % len(all_senders)]
+            await sender.next(data)
+            ticker += 1
+            continue
+        new_len = len(buffer) + len(data)
+        if new_len >= part_size:
+            cutoff = part_size - len(buffer)
+            buffer.extend(data[:cutoff])
+            _, sender = all_senders[ticker % len(all_senders)]
+            await sender.next(bytes(buffer))
+            ticker += 1
+            buffer.clear()
+            buffer.extend(data[cutoff:])
+        else:
+            buffer.extend(data)
+    if len(buffer) > 0:
         _, sender = all_senders[ticker % len(all_senders)]
-        await sender.next(data)
-        ticker += 1
+        await sender.next(bytes(buffer))
 
     for _, sender in all_senders:
         await sender.disconnect()
