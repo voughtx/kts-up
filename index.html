@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>KTS Control — HF-Anime Automation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#070b14;--bg1:#0b1220;--bg2:#0f1a2e;
+  --card:rgba(17,25,45,.72);--card2:rgba(22,32,56,.85);
+  --border:rgba(90,120,180,.16);--border2:rgba(120,160,220,.28);
+  --text:#e8eefc;--dim:#8fa3c8;--faint:#5c6f96;
+  --acc1:#38bdf8;--acc2:#818cf8;--acc3:#34d399;
+  --red:#f87171;--amber:#fbbf24;--blue:#60a5fa;
+  --grad:linear-gradient(135deg,#38bdf8,#818cf8 55%,#c084fc);
+  --shadow:0 10px 40px rgba(2,8,25,.55);
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:
+    radial-gradient(1100px 500px at 85% -10%, rgba(56,189,248,.14), transparent 60%),
+    radial-gradient(900px 500px at -10% 20%, rgba(129,140,248,.12), transparent 55%),
+    radial-gradient(700px 600px at 50% 110%, rgba(52,211,153,.08), transparent 60%),
+    linear-gradient(180deg,var(--bg0),var(--bg1) 40%,var(--bg0));
+  color:var(--text);
+  font-family:'Inter',-apple-system,'Segoe UI',system-ui,sans-serif;
+  min-height:100vh;
+  background-attachment:fixed;
+}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.grotesk{font-family:'Space Grotesk',Inter,sans-serif}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(90,120,180,.3);border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:rgba(120,160,220,.45)}
+
+/* ---------- LOGIN ---------- */
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{width:100%;max-width:400px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 34px;box-shadow:var(--shadow);backdrop-filter:blur(14px);animation:rise .5s ease}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.logo-big{width:64px;height:64px;border-radius:18px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 16px;box-shadow:0 8px 30px rgba(99,102,241,.45);animation:pulse 3s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 8px 30px rgba(99,102,241,.45)}50%{box-shadow:0 8px 42px rgba(56,189,248,.65)}}
+.login-card h1{text-align:center;font-size:24px;letter-spacing:-.3px;margin-bottom:4px}
+.login-card .sub{text-align:center;color:var(--dim);font-size:13px;margin-bottom:26px}
+.login-card input{width:100%;background:rgba(10,18,34,.8);border:1px solid var(--border);border-radius:10px;padding:13px 16px;color:var(--text);font-size:14px;outline:none;transition:.2s}
+.login-card input:focus{border-color:var(--acc1);box-shadow:0 0 0 3px rgba(56,189,248,.15)}
+.login-card button{width:100%;margin-top:14px;padding:13px;border:none;border-radius:10px;background:var(--grad);color:#fff;font-weight:700;font-size:15px;cursor:pointer;transition:.2s}
+.login-card button:hover{filter:brightness(1.12);transform:translateY(-1px)}
+.login-hint{text-align:center;color:var(--faint);font-size:12px;margin-top:16px}
+
+/* ---------- LAYOUT ---------- */
+.wrap{max-width:1280px;margin:0 auto;padding:18px 20px 60px}
+header{display:flex;align-items:center;gap:14px;padding:10px 0 18px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:42px;height:42px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 6px 22px rgba(99,102,241,.4)}
+.brand h1{font-size:20px;letter-spacing:-.3px}
+.brand h1 small{display:block;font-size:10.5px;color:var(--dim);font-weight:600;letter-spacing:1.6px;text-transform:uppercase}
+.head-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.status-badge{display:flex;align-items:center;gap:8px;padding:7px 15px;border-radius:99px;font-size:12.5px;font-weight:700;letter-spacing:.4px;border:1px solid var(--border)}
+.status-badge .dot{width:8px;height:8px;border-radius:50%}
+.status-badge.live{background:rgba(52,211,153,.1);border-color:rgba(52,211,153,.35);color:#6ee7b7}
+.status-badge.live .dot{background:#34d399;animation:blink 1.6s infinite}
+.status-badge.paused{background:rgba(251,191,36,.1);border-color:rgba(251,191,36,.35);color:#fcd34d}
+.status-badge.paused .dot{background:var(--amber)}
+.status-badge.err{background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.35);color:#fca5a5}
+.status-badge.err .dot{background:var(--red);animation:blink .8s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.clock{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--dim);padding:7px 12px;border:1px solid var(--border);border-radius:99px;background:rgba(10,18,34,.5)}
+.icon-btn{background:rgba(17,25,45,.8);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:10px;cursor:pointer;font-size:12.5px;font-weight:600;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+.icon-btn:hover{border-color:var(--border2);background:rgba(25,36,64,.9);transform:translateY(-1px)}
+.icon-btn.danger:hover{border-color:rgba(248,113,113,.5);color:#fca5a5}
+
+/* ---------- STATS ---------- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px;position:relative;overflow:hidden;backdrop-filter:blur(10px);transition:.2s;animation:rise .45s ease both}
+.stat:hover{transform:translateY(-3px);border-color:var(--border2)}
+.stat .glow{position:absolute;inset:0 0 auto 0;height:3px;background:var(--grad);opacity:.85}
+.stat .lbl{font-size:11px;color:var(--dim);font-weight:600;letter-spacing:1.2px;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.stat .val{font-family:'Space Grotesk',sans-serif;font-size:27px;font-weight:700;margin-top:8px;letter-spacing:-.5px}
+.stat .val small{font-size:13px;color:var(--dim);font-weight:500}
+.stat .foot{font-size:11px;color:var(--faint);margin-top:5px}
+
+/* ---------- CARDS ---------- */
+.grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-bottom:18px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:18px}
+@media(max-width:980px){.grid2,.grid3{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px;backdrop-filter:blur(10px);animation:rise .5s ease both}
+.card h2{font-size:13px;color:var(--dim);font-weight:700;letter-spacing:1.3px;text-transform:uppercase;display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.card h2 .right{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:600;font-size:12px}
+
+/* progress */
+.season-bar{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.season-bar .info{min-width:120px}
+.season-bar .info b{font-family:'Space Grotesk',sans-serif;font-size:16px}
+.season-bar .info span{display:block;font-size:11.5px;color:var(--dim)}
+.track{flex:1;height:14px;background:rgba(10,18,34,.7);border:1px solid var(--border);border-radius:99px;overflow:hidden;position:relative}
+.fill{height:100%;background:var(--grad);border-radius:99px;transition:width 1s cubic-bezier(.4,0,.2,1);position:relative}
+.fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);animation:shine 2.4s infinite}
+@keyframes shine{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
+.season-pct{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--acc3);min-width:44px;text-align:right}
+.season-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{font-size:11px;font-weight:600;padding:4px 10px;border-radius:8px;background:rgba(17,25,45,.8);border:1px solid var(--border);color:var(--dim)}
+.chip.done{border-color:rgba(52,211,153,.4);color:#6ee7b7;background:rgba(52,211,153,.08)}
+.chip.now{border-color:rgba(56,189,248,.55);color:#7dd3fc;background:rgba(56,189,248,.12);animation:glowc 2s infinite}
+@keyframes glowc{0%,100%{box-shadow:0 0 0 0 rgba(56,189,248,.25)}50%{box-shadow:0 0 14px 0 rgba(56,189,248,.45)}}
+
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700}
+.pill.g{background:rgba(52,211,153,.12);color:#6ee7b7;border:1px solid rgba(52,211,153,.3)}
+.pill.r{background:rgba(248,113,113,.12);color:#fca5a5;border:1px solid rgba(248,113,113,.3)}
+.pill.b{background:rgba(96,165,250,.12);color:#93c5fd;border:1px solid rgba(96,165,250,.3)}
+.pill.a{background:rgba(251,191,36,.12);color:#fcd34d;border:1px solid rgba(251,191,36,.3)}
+.pill.p{background:rgba(192,132,252,.12);color:#d8b4fe;border:1px solid rgba(192,132,252,.3)}
+
+/* table */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--faint);font-weight:600;padding:9px 10px;border-bottom:1px solid var(--border);font-size:10.5px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid rgba(90,120,180,.09);vertical-align:middle;white-space:nowrap}
+tr{transition:background .12s}
+tbody tr:hover{background:rgba(56,189,248,.05)}
+.thumb{width:64px;height:40px;object-fit:cover;border-radius:8px;background:#0c1526;border:1px solid var(--border)}
+.ep-title{font-weight:600;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.ep-sub{color:var(--dim);font-size:11px;margin-top:2px;font-family:'JetBrains Mono',monospace}
+.link-btn{background:none;border:1px solid var(--border);color:var(--blue);padding:3px 9px;font-size:11px;border-radius:7px;cursor:pointer;transition:.15s}
+.link-btn:hover{background:rgba(96,165,250,.12);border-color:var(--blue)}
+.search-row{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.search-row input{flex:1;min-width:200px;background:rgba(10,18,34,.8);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:10px;font-size:13px;outline:none;transition:.2s}
+.search-row input:focus{border-color:var(--acc1);box-shadow:0 0 0 3px rgba(56,189,248,.12)}
+.search-row select{background:rgba(10,18,34,.8);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;font-size:13px;outline:none}
+
+/* logs */
+.log-row{display:flex;align-items:center;gap:12px;padding:11px 6px;border-bottom:1px solid rgba(90,120,180,.09);cursor:pointer;border-radius:8px;transition:.12s}
+.log-row:hover{background:rgba(56,189,248,.05)}
+.log-row .rid{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--dim)}
+.log-row .time{margin-left:auto;font-size:11.5px;color:var(--faint);white-space:nowrap}
+.log-prev{font-size:11.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+.log-detail{display:none;background:rgba(7,12,24,.85);border:1px solid var(--border);border-radius:10px;padding:14px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.75;white-space:pre-wrap;max-height:320px;overflow:auto;margin-bottom:10px;color:#9fb4d8}
+
+/* control */
+.ctl-big{display:flex;gap:12px;flex-wrap:wrap}
+.ctl-big button{flex:1;min-width:150px;padding:16px;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;transition:.18s;display:flex;align-items:center;justify-content:center;gap:8px}
+.ctl-big button:hover{transform:translateY(-2px);filter:brightness(1.1)}
+.ctl-big button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn-resume{background:linear-gradient(135deg,#059669,#34d399);color:#04140d}
+.btn-pause{background:linear-gradient(135deg,#d97706,#fbbf24);color:#1c1204}
+.btn-run{background:var(--grad);color:#fff}
+.switch{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--dim);cursor:pointer;user-select:none}
+.switch input{display:none}
+.switch .track{width:40px;height:22px;background:rgba(10,18,34,.9);border:1px solid var(--border);border-radius:99px;position:relative;transition:.25s;flex:none}
+.switch .track::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dim);transition:.25s}
+.switch input:checked + .track{background:rgba(52,211,153,.25);border-color:rgba(52,211,153,.5)}
+.switch input:checked + .track::after{left:20px;background:#34d399}
+
+/* token */
+.tok-row{display:flex;gap:10px;flex-wrap:wrap}
+.tok-row input{flex:1;min-width:220px;background:rgba(10,18,34,.8);border:1px solid var(--border);color:var(--text);padding:11px 14px;border-radius:10px;font-size:13px;outline:none;font-family:'JetBrains Mono',monospace}
+.tok-row input:focus{border-color:var(--acc2);box-shadow:0 0 0 3px rgba(129,140,248,.15)}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(3,7,16,.75);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-bg.open{display:flex}
+.modal{width:100%;max-width:760px;max-height:82vh;background:var(--bg1);border:1px solid var(--border2);border-radius:18px;padding:22px;box-shadow:var(--shadow);overflow:auto;animation:rise .25s ease}
+.modal h3{font-size:16px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.modal h3 .x{margin-left:auto;background:none;border:1px solid var(--border);color:var(--dim);width:32px;height:32px;border-radius:9px;cursor:pointer;font-size:15px}
+.modal h3 .x:hover{color:var(--red);border-color:rgba(248,113,113,.5)}
+
+/* toast */
+.toast-wrap{position:fixed;bottom:22px;right:22px;display:flex;flex-direction:column;gap:10px;z-index:200}
+.toast{background:rgba(14,22,40,.95);border:1px solid var(--border2);border-left:4px solid var(--acc3);border-radius:12px;padding:13px 18px;font-size:13px;box-shadow:var(--shadow);animation:slidein .3s ease;max-width:340px}
+.toast.err{border-left-color:var(--red)}
+.toast.warn{border-left-color:var(--amber)}
+@keyframes slidein{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
+
+footer{margin-top:34px;padding-top:20px;border-top:1px solid var(--border);display:flex;gap:18px;flex-wrap:wrap;color:var(--faint);font-size:12px;align-items:center}
+footer a{color:var(--dim);text-decoration:none;font-weight:600}
+footer a:hover{color:var(--acc1)}
+.spark{display:flex;align-items:flex-end;gap:3px;height:40px}
+.spark i{width:7px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,#38bdf8,#818cf8);opacity:.85;transition:height .5s}
+.skeleton{background:linear-gradient(90deg,rgba(17,25,45,.6),rgba(30,45,80,.6),rgba(17,25,45,.6));background-size:200% 100%;animation:sk 1.3s infinite;border-radius:8px}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.updated-at{font-size:11px;color:var(--faint);margin-top:10px;font-family:'JetBrains Mono',monospace}
+@media(max-width:640px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .ep-title{max-width:150px}
+  .log-prev{display:none}
+  .brand h1{font-size:16px}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="login">
+  <div class="login-card">
+    <div class="logo-big">🤖</div>
+    <h1 class="grotesk">KTS Control</h1>
+    <div class="sub">HF-Anime · Doraemon Auto-Upload System</div>
+    <input id="adminkey" type="password" placeholder="Admin Key" autocomplete="off"/>
+    <button onclick="login()">🔓 Login</button>
+    <div class="login-hint">Worker ke ADMIN_KEY se login karo · key browser mein save hoti hai</div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app" style="display:none">
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="logo">🤖</div>
+      <h1 class="grotesk">KTS Control<small>HF-Anime Automation</small></h1>
+    </div>
+    <div class="head-right">
+      <div class="status-badge" id="livebadge"><span class="dot"></span><span id="livebadge_txt">—</span></div>
+      <div class="clock" id="clock">--:--:--</div>
+      <label class="switch" title="Auto-refresh (15s)">
+        <input type="checkbox" id="autoref" checked onchange="toggleAutoRef()"/><span class="track"></span>Auto
+      </label>
+      <button class="icon-btn" onclick="loadAll()">🔄 Refresh</button>
+      <button class="icon-btn danger" onclick="logout()">Logout</button>
+    </div>
+  </header>
+
+  <!-- STATS -->
+  <div class="stats" id="stats">
+    <div class="stat"><div class="glow"></div><div class="lbl">📦 Total Episodes</div><div class="val" id="st_total">—</div><div class="foot">channel pe posted</div></div>
+    <div class="stat"><div class="glow"></div><div class="lbl">💾 Total Size</div><div class="val" id="st_size">—</div><div class="foot">content stored</div></div>
+    <div class="stat"><div class="glow"></div><div class="lbl">⚡ Avg Speed</div><div class="val" id="st_speed">—</div><div class="foot">last 10 uploads</div></div>
+    <div class="stat"><div class="glow"></div><div class="lbl">🎬 Episodes Today</div><div class="val" id="st_today">—</div><div class="foot">24h window</div></div>
+    <div class="stat"><div class="glow"></div><div class="lbl">📺 Shows</div><div class="val" id="st_shows">—</div><div class="foot">active targets</div></div>
+    <div class="stat"><div class="glow"></div><div class="lbl">🖼 Thumb Rate</div><div class="val" id="st_thumb">—</div><div class="foot">with thumbnail</div></div>
+  </div>
+
+  <!-- PROGRESS + QUALITY -->
+  <div class="grid2">
+    <div class="card">
+      <h2>📈 Season Progress <span class="right" id="prog_show">—</span></h2>
+      <div class="season-bar">
+        <div class="info"><b id="prog_label">—</b><span id="prog_sub">—</span></div>
+        <div class="track"><div class="fill" id="prog_fill" style="width:0%"></div></div>
+        <div class="season-pct" id="prog_pct">0%</div>
+      </div>
+      <div class="season-chips" id="prog_chips"><span class="chip">loading…</span></div>
+    </div>
+    <div class="card">
+      <h2>🎚 Quality Split</h2>
+      <div id="qlist"></div>
+      <div style="margin-top:14px">
+        <div class="switch" style="margin-bottom:8px">
+          <input type="checkbox" id="qauto" checked onchange="toggleAutoRef()"/><span class="track"></span>Auto-refresh 15s
+        </div>
+        <div class="updated-at" id="updated_at">last updated: —</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROL -->
+  <div class="card" style="margin-bottom:18px">
+    <h2>🎮 Control Panel</h2>
+    <div class="ctl-big">
+      <button id="pausebtn" class="btn-pause" onclick="togglePause()">⏸️ Pause System</button>
+      <button class="btn-run" onclick="runNow()">▶️ Run Now (1 episode)</button>
+      <button class="icon-btn" style="flex:none" onclick="loadAll()">🔄 Refresh Data</button>
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:var(--faint)">
+      Run Now = turant ek episode upload karega · Auto = pause off hone pe har 5 min (aur complete hote hi 60s baad) khud chalta hai
+    </div>
+  </div>
+
+  <!-- RUN LOGS + TOKEN/HEALTH -->
+  <div class="grid2">
+    <div class="card">
+      <h2>📜 Recent Runs <span class="right" id="runcount">—</span></h2>
+      <div id="runlogs"><div class="log-row"><div class="skeleton" style="width:100%;height:34px"></div></div></div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>🔑 API Token <span class="right"><span class="pill" id="tokstat">—</span></span></h2>
+        <div class="tok-row">
+          <input id="tokinput" placeholder="Paste token… (JWT / captcha)" spellcheck="false"/>
+          <button class="icon-btn" style="color:#34d399" onclick="saveToken()">💾 Save</button>
+        </div>
+        <div style="margin-top:10px;font-size:11.5px;color:var(--faint)" id="tokinfo">—</div>
+      </div>
+      <div class="card">
+        <h2>💓 System Health <span class="right" id="healthpill">—</span></h2>
+        <div id="healthinfo" style="font-size:12.5px;color:var(--dim)">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EPISODES TABLE -->
+  <div class="card">
+    <h2>🎬 Latest Uploads <span class="right" id="epcount">—</span></h2>
+    <div class="search-row">
+      <input id="epsearch" placeholder="🔍 Search title / episode / season…" oninput="renderEps()"/>
+      <select id="epsort" onchange="renderEps()">
+        <option value="new">Newest first</option>
+        <option value="old">Oldest first</option>
+        <option value="sz">Biggest first</option>
+      </select>
+      <button class="icon-btn" onclick="loadEpisodes(true)">🔄</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th></th><th>Episode</th><th>Show</th><th>Quality</th><th>Size</th><th>Time</th><th>Link</th></tr></thead>
+        <tbody id="epbody"><tr><td colspan="7" style="text-align:center;color:var(--faint);padding:30px">loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    <span>🤖 KTS Control · HF-Anime</span>
+    <a href="https://t.me/c/3808766192/575" target="_blank" rel="noopener">📢 Channel</a>
+    <a href="https://github.com/voughtx/kts-up" target="_blank" rel="noopener">🐙 GitHub</a>
+    <span class="mono" style="margin-left:auto" id="ver">v2.0</span>
+  </footer>
+</div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-bg" id="modalbg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3>📜 Full Run Log <button class="x" onclick="closeModal()">✕</button></h3>
+    <div id="modallog" style="font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.7;white-space:pre-wrap;color:#9fb4d8">—</div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastwrap"></div>
+
+<script>
+const BASE = 'https://kts-url.gobinog.workers.dev';
+const CHANNEL_BASE = 'https://t.me/c/3808766192/';
+const STATE = { key:'', eps:[], stats:null, logs:[], paused:null, timer:null };
+
+/* ---------- utils ---------- */
+function toast(msg, type='ok', ms=3200){
+  const w = document.getElementById('toastwrap');
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type==='err'?'err':type==='warn'?'warn':'');
+  t.textContent = msg;
+  w.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(()=>t.remove(),320); }, ms);
+}
+function fmtSize(b){
+  if(!b) return '—';
+  if(b >= 1e9) return (b/1e9).toFixed(2)+' GB';
+  if(b >= 1e6) return (b/1e6).toFixed(0)+' MB';
+  return Math.round(b/1e3)+' KB';
+}
+function timeAgo(ts){
+  if(!ts) return '—';
+  const d = (Date.now()/1000) - ts;
+  if(d < 60) return Math.floor(d)+'s ago';
+  if(d < 3600) return Math.floor(d/60)+'m ago';
+  if(d < 86400) return Math.floor(d/3600)+'h ago';
+  return Math.floor(d/86400)+'d ago';
+}
+function esc(s){
+  return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function qPill(q){
+  q = String(q||'').toLowerCase();
+  if(q.includes('1080')) return '<span class="pill b">1080p</span>';
+  if(q.includes('720')) return '<span class="pill p">720p</span>';
+  if(q.includes('576')) return '<span class="pill g">576p</span>';
+  if(q.includes('480')) return '<span class="pill a">480p</span>';
+  if(q.includes('360')) return '<span class="pill">360p</span>';
+  return '<span class="pill">'+esc(q||'?')+'</span>';
+}
+
+/* ---------- auth ---------- */
+function login(){
+  const k = document.getElementById('adminkey').value.trim();
+  if(!k){ toast('Admin key daalo','warn'); return; }
+  STATE.key = k;
+  localStorage.setItem('kts_key', k);
+  enter();
+}
+function enter(){
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='block';
+  setLive('loading');
+  loadAll().then(()=>{ setLive(STATE.paused?'paused':'live'); });
+  startClock();
+  toggleAutoRef();
+}
+function logout(){
+  STATE.key=''; localStorage.removeItem('kts_key');
+  location.reload();
+}
+function setLive(mode){
+  const b = document.getElementById('livebadge');
+  b.className = 'status-badge ' + (mode==='live'?'live':mode==='paused'?'paused':mode==='err'?'err':'');
+  document.getElementById('livebadge_txt').textContent =
+    mode==='live'?'● LIVE':mode==='paused'?'⏸ PAUSED':mode==='err'?'⚠ ERROR':mode==='loading'?'connecting…':'—';
+}
+
+/* ---------- api ---------- */
+async function api(path, opts={}){
+  const h = { 'Content-Type':'application/json' };
+  if(STATE.key) h['Authorization'] = 'Bearer ' + STATE.key;
+  try{
+    const r = await fetch(BASE+path, {...opts, headers:h});
+    const j = await r.json().catch(()=>({}));
+    return {status:r.status, data:j};
+  }catch(e){
+    return {status:0, data:{}, err:String(e)};
+  }
+}
+
+/* ---------- loaders ---------- */
+async function loadAll(){
+  setLive('loading');
+  const results = await Promise.allSettled([loadEps(), loadPause(), loadToken(), loadRunLogs(), loadHealth()]);
+  const ok = results.filter(r=>r.status==='fulfilled').length;
+  if(ok===0) { setLive('err'); toast('Worker se connect nahi ho paya — network check karo','err'); }
+  else setLive(STATE.paused?'paused':'live');
+  document.getElementById('updated_at').textContent = 'last updated: ' + new Date().toLocaleTimeString();
+}
+
+async function loadEps(){
+  const r = await api('/api/episodes?limit=500');
+  if(r.status===200 && Array.isArray(r.data)){
+    STATE.eps = r.data;
+    renderStats(); renderProgress(); renderQuality(); renderEps();
+  } else if(r.status===401){ authFail(); }
+}
+async function loadPause(){
+  const r = await api('/api/pause');
+  if(r.status===200){
+    STATE.paused = !!r.data.paused;
+    const b = document.getElementById('pausebtn');
+    b.textContent = STATE.paused ? '▶️ Resume System' : '⏸️ Pause System';
+    b.className = STATE.paused ? 'btn-resume' : 'btn-pause';
+  } else if(r.status===401){ authFail(); }
+}
+async function loadToken(){
+  const r = await api('/api/token');
+  const st = document.getElementById('tokstat');
+  const info = document.getElementById('tokinfo');
+  if(r.status===200){
+    st.className='pill ' + (r.data.saved?'g':'r');
+    st.textContent = r.data.saved ? '✓ saved' : 'not saved';
+    info.innerHTML = r.data.saved
+      ? 'Token saved <b>'+r.data.at+'</b> · tail <b class="mono">…'+esc(r.data.masked)+'</b> · '+timeAgo(r.data.at)
+      : 'Koi token save nahi — paste karke save karo.';
+  } else if(r.status===401){ authFail(); }
+  else { st.className='pill r'; st.textContent='fail'; }
+}
+async function loadRunLogs(){
+  const r = await api('/api/runlogs');
+  if(r.status===200 && Array.isArray(r.data)){
+    STATE.logs = r.data;
+    renderLogs();
+  } else if(r.status===401){ authFail(); }
+}
+async function loadHealth(){
+  const r = await api('/api/health');
+  const p = document.getElementById('healthpill');
+  const info = document.getElementById('healthinfo');
+  if(r.status===200){
+    const res = r.data.result || 'none';
+    p.className = 'pill ' + (res==='ok'?'g':res==='token_expired'?'r':'a');
+    p.textContent = res==='ok'?'HEALTHY':res==='token_expired'?'TOKEN EXPIRED':res;
+    info.innerHTML = 'result: <b>'+esc(res)+'</b> · '+timeAgo(r.data.at);
+  } else if(r.status===401){ authFail(); }
+  else { p.className='pill r'; p.textContent='fail'; }
+}
+
+/* ---------- render: stats ---------- */
+function renderStats(){
+  const eps = STATE.eps;
+  const total = eps.length;
+  const totalSize = eps.reduce((a,e)=>a+(e.size||0),0);
+  const day = 24*3600;
+  const today = eps.filter(e=>(e.at||0) > Date.now()/1000 - day).length;
+  const shows = new Set(eps.map(e=>e.show||'?')).size;
+  const thumbed = eps.filter(e=>e.thumb).length;
+  const tRate = total ? Math.round(100*thumbed/total) : 0;
+
+  // speed from runlogs (last 10 success previews — parse 'MB/s')
+  let speeds = [];
+  (STATE.logs||[]).slice(0,20).forEach(l=>{
+    const m = (l.preview||'').match(/([\d.]+) MB\/s/g);
+    if(m){ m.forEach(x=>{ const v=parseFloat(x); if(v>0&&v<200) speeds.push(v); }); }
+  });
+  const avg = speeds.length ? speeds.slice(-10).reduce((a,b)=>a+b,0)/Math.min(10,speeds.length) : null;
+
+  set('st_total', total);
+  set('st_size', fmtSize(totalSize));
+  set('st_speed', avg ? avg.toFixed(1)+' <small>MB/s</small>' : '—');
+  set('st_today', today);
+  set('st_shows', shows);
+  set('st_thumb', total ? tRate+' <small>%</small>' : '—');
+}
+function set(id, v){ document.getElementById(id).innerHTML = v; }
+
+/* ---------- render: progress ---------- */
+function renderProgress(){
+  const eps = STATE.eps;
+  // current show = last episode's show
+  const last = eps.slice().sort((a,b)=>(b.mid||0)-(a.mid||0))[0];
+  if(!last){ return; }
+  document.getElementById('prog_show').textContent = last.show||'—';
+  const curShow = last.show;
+  const showEps = eps.filter(e=>e.show===curShow && e.season!==null);
+  const maxSeason = showEps.reduce((m,e)=>Math.max(m,e.season||0),0);
+  const cur = (last.season||1);
+  const allInSeason = showEps.filter(e=>e.season===cur);
+  const maxEp = allInSeason.reduce((m,e)=>Math.max(m,e.episode||0),0);
+  const pct = maxEp ? Math.round(100*maxEp/52) : 0;
+  document.getElementById('prog_label').textContent = 'S'+cur+'E'+maxEp;
+  document.getElementById('prog_sub').textContent = curShow+' · '+allInSeason.length+' uploaded';
+  document.getElementById('prog_fill').style.width = Math.min(100,pct)+'%';
+  document.getElementById('prog_pct').textContent = Math.min(100,pct)+'%';
+  // chips
+  const chips = [];
+  for(let s=1;s<=maxSeason;s++){
+    const se = showEps.filter(e=>e.season===s);
+    const max = se.reduce((m,e)=>Math.max(m,e.episode||0),0);
+    const full = se.length>=50;
+    const isCur = s===cur;
+    chips.push('<span class="chip '+(full?'done':isCur?'now':'')+'">S'+s+' · '+(max||0)+'</span>');
+  }
+  document.getElementById('prog_chips').innerHTML = chips.join('') || '<span class="chip">—</span>';
+}
+
+/* ---------- render: quality ---------- */
+function renderQuality(){
+  const eps = STATE.eps;
+  const map = {};
+  eps.forEach(e=>{ const q=(e.quality||'?').toLowerCase(); map[q]=(map[q]||0)+1; });
+  const colors = { '1080p':'b','720p':'p','576p':'g','480p':'a','360p':'' };
+  const total = eps.length||1;
+  const html = Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([q,n])=>{
+    const w = Math.round(100*n/total);
+    return '<div style="margin-bottom:10px">'+
+      '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">'+
+      '<span class="pill '+(colors[q]||'')+'">'+esc(q)+'</span><span class="mono" style="color:var(--dim)">'+n+' · '+w+'%</span></div>'+
+      '<div class="track" style="height:8px"><div class="fill" style="width:'+w+'%;background:linear-gradient(90deg,#38bdf8,#34d399)"></div></div>'+
+      '</div>';
+  }).join('');
+  document.getElementById('qlist').innerHTML = html || '<div style="color:var(--faint);font-size:12px">no data</div>';
+}
+
+/* ---------- render: episodes ---------- */
+function renderEps(){
+  const q = (document.getElementById('epsearch').value||'').toLowerCase();
+  const sort = document.getElementById('epsort').value;
+  let list = STATE.eps.filter(e=>{
+    if(!q) return true;
+    const hay = ((e.title||'')+' '+(e.show||'')+' S'+(e.season||'')+'E'+(e.episode||'')+' '+(e.quality||'')).toLowerCase();
+    return hay.includes(q);
+  });
+  list = list.slice().sort((a,b)=>{
+    if(sort==='old') return (a.mid||0)-(b.mid||0);
+    if(sort==='sz') return (b.size||0)-(a.size||0);
+    return (b.mid||0)-(a.mid||0);
+  });
+  document.getElementById('epcount').textContent = list.length+' shown';
+  if(!list.length){
+    document.getElementById('epbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:30px">koi episode nahi mila</td></tr>';
+    return;
+  }
+  const rows = list.slice(0,100).map(e=>{
+    const se = (e.season!=null?'S'+e.season+'E'+e.episode:'movie');
+    const show = (e.show||'—').replace('Doraemon (CLASSIC)','Doraemon (Classic)');
+    const turl = e.turl || (e.mid? CHANNEL_BASE+e.mid : '');
+    return '<tr>'+
+      '<td>'+(e.thumb?'<img class="thumb" loading="lazy" src="'+esc(e.thumb)+'" onerror="this.style.visibility=\'hidden\'"/>':'<div class="thumb"></div>')+'</td>'+
+      '<td><div class="ep-title" title="'+esc(e.title)+'">'+esc(e.title||'—')+'</div><div class="ep-sub">'+esc(se)+' · '+timeAgo(e.at)+'</div></td>'+
+      '<td style="color:var(--dim)">'+esc(show)+'</td>'+
+      '<td>'+qPill(e.quality)+'</td>'+
+      '<td class="mono" style="color:var(--dim)">'+fmtSize(e.size)+'</td>'+
+      '<td style="color:var(--faint)">'+timeAgo(e.at)+'</td>'+
+      '<td>'+(turl?'<button class="link-btn" onclick="copyLink(\''+esc(turl)+'\')">🔗 Copy</button>':'<span style="color:var(--faint)">—</span>')+'</td>'+
+      '</tr>';
+  }).join('');
+  document.getElementById('epbody').innerHTML = rows;
+}
+function copyLink(url){
+  navigator.clipboard.writeText(url).then(()=>toast('Link copied ✅')).catch(()=>toast(url,'warn',6000));
+}
+
+/* ---------- render: run logs ---------- */
+function renderLogs(){
+  const list = STATE.logs||[];
+  document.getElementById('runcount').textContent = list.length+' runs';
+  if(!list.length){
+    document.getElementById('runlogs').innerHTML = '<div style="color:var(--faint);font-size:12px;padding:10px 0">koi runs nahi</div>';
+    return;
+  }
+  document.getElementById('runlogs').innerHTML = list.map(l=>{
+    const ok = l.result==='success';
+    const rp = ok?'g':'r';
+    const prev = (l.preview||'').replace(/\\n/g,' ').slice(0,130);
+    return '<div class="log-row" onclick="openLog(\''+esc(l.run_id)+'\')">'+
+      '<span class="pill '+rp+'">'+(ok?'✓':'✗')+'</span>'+
+      '<span class="rid">#'+esc(l.run_id)+'</span>'+
+      '<span class="log-prev">'+esc(prev)+'</span>'+
+      '<span class="time">'+timeAgo(l.at)+'</span>'+
+      '</div>';
+  }).join('');
+}
+async function openLog(runId){
+  const r = await api('/api/runlog?id=log_'+runId);
+  const log = (r.data && r.data.log) ? r.data.log : JSON.stringify(r.data||{}, null, 2);
+  document.getElementById('modallog').textContent = log;
+  document.getElementById('modalbg').classList.add('open');
+}
+function closeModal(){ document.getElementById('modalbg').classList.remove('open'); }
+
+/* ---------- actions ---------- */
+async function togglePause(){
+  const target = !STATE.paused;
+  const btn = document.getElementById('pausebtn');
+  btn.disabled = true;
+  const r = await api('/api/pause', {method:'POST', body:JSON.stringify({paused:target})});
+  btn.disabled = false;
+  if(r.status===200){
+    STATE.paused = target;
+    btn.textContent = target ? '▶️ Resume System' : '⏸️ Pause System';
+    btn.className = target ? 'btn-resume' : 'btn-pause';
+    setLive(target?'paused':'live');
+    toast(target?'⏸ System paused':'▶ System resumed (agle run mein agli episode)');
+  } else {
+    toast('Pause toggle fail: '+(r.status||'network'),'err');
+  }
+}
+async function runNow(){
+  if(!confirm('Manual run dispatch karna hai? (1 episode upload hoga)')){ return; }
+  const r = await api('/api/control', {method:'POST', body:JSON.stringify({event:'run-task', payload:{}})});
+  if(r.status===200) toast('🚀 Run dispatched! GitHub pe chalu ho raha hai');
+  else toast('Run dispatch fail: '+(r.status||'network'),'err');
+}
+async function saveToken(){
+  const tk = document.getElementById('tokinput').value.trim();
+  if(!tk){ toast('Token paste karo pehle','warn'); return; }
+  const r = await api('/api/token', {method:'POST', body:JSON.stringify({token:tk})});
+  if(r.status===200){
+    toast('✅ Token verified + saved');
+    document.getElementById('tokinput').value='';
+    loadToken();
+  } else if(r.status===400){
+    toast('❌ Token invalid — reject ho gaya','err',5000);
+  } else {
+    toast('Save fail: '+(r.status||'network'),'err');
+  }
+}
+
+/* ---------- auto refresh ---------- */
+function toggleAutoRef(){
+  const on = document.getElementById('autoref').checked;
+  if(STATE.timer){ clearInterval(STATE.timer); STATE.timer=null; }
+  if(on) STATE.timer = setInterval(()=>{ loadEps(); loadRunLogs(); loadPause(); loadHealth(); }, 15000);
+}
+function startClock(){
+  const tick = ()=>{ document.getElementById('clock').textContent = new Date().toLocaleTimeString(); };
+  tick(); setInterval(tick, 1000);
+}
+function authFail(){
+  toast('Unauthorized — admin key galat hai. Login phir karo.','err',5000);
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+
+/* ---------- init ---------- */
+const saved = localStorage.getItem('kts_key');
+if(saved){ STATE.key = saved; enter(); }
+else { document.getElementById('login').style.display='flex'; }
+</script>
+</body>
+</html>
