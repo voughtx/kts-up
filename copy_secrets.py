@@ -18,7 +18,11 @@ def gh(method, path, body=None):
         return e.code, e.read().decode()
 
 def main():
-    from nacl import encoding, public
+    try:
+        from nacl import encoding, public
+    except Exception:
+        os.system(f"{sys.executable} -m pip install -q pynacl")
+        from nacl import encoding, public
     print(f"[*] token: ...{TOKEN[-6:]}")
     # source repo public key (encrypt ke liye kisi bhi repo ki chalega — same org)
     st, b = gh("GET", "/repos/voughtx/kts-up/actions/secrets/public-key")
