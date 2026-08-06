@@ -53,6 +53,10 @@ on:
         description: "episode id to delete (optional)"
         required: false
         default: ""
+      ep_ids:
+        description: "comma episode ids to delete (optional)"
+        required: false
+        default: ""
 concurrency:
   group: run-task
   cancel-in-progress: false
@@ -107,6 +111,7 @@ jobs:
           MIDS: ${{ inputs.mids }}
           WORKERS: ${{ inputs.workers }}
           EP_ID: ${{ inputs.ep_id }}
+          EP_IDS: ${{ inputs.ep_ids }}
           LINK_IDS: ${{ inputs.link_ids }}
           PUB: ${{ inputs.pub }}
           EXP_H: ${{ inputs.exp_h }}
