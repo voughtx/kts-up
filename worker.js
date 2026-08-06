@@ -88,7 +88,7 @@ async function sbDeleteRow(env, id) {
 async function ghSaveCommits(env) {
   if (!env.GH_TOKEN || !env.GH_REPO) return 0;
   try {
-    const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/commits?per_page=100`, {
+    const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/commits?per_page=20`, {
       headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "kts-worker" },
     });
     if (!r.ok) return 0;
@@ -209,7 +209,7 @@ async function ghCleanupRuns(env) {
     const now = Date.now();
     let processed = 0;
     for (const w of d.workflow_runs || []) {
-      if (processed >= 15) break; // per tick limit
+      if (processed >= 5) break; // per tick limit (subrequest 50 limit)
       const done = new Date(w.updated_at).getTime();
       if (now - done < 7 * 60 * 1000) continue; // abhi bhi fresh ho sakta hai (logs finalize)
       processed++;
@@ -505,19 +505,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     try {
-      const jn = await ghCleanupRuns(env);
-      console.log("cron: janitor ->", JSON.stringify(jn));
-      // commits backup + rolling prune (500 max, logs size watchdog 10MB)
-      try {
-        const cs = await ghSaveCommits(env);
-        const pl = await sbPruneCount(env, "log_", 500);
-        const pc = await sbPruneCount(env, "commit_", 500);
-        const ps = await sbPruneSize(env, 10 * 1024 * 1024);
-        if (cs > 0 || pl > 0 || pc > 0 || ps > 0) console.log("cron: backup commits=" + cs + " pruneLogs=" + pl + " pruneCommits=" + pc + " pruneSize=" + ps);
-      } catch (e) {
-        console.log("cron: backup err", String(e).slice(0, 80));
-      }
-
+      // ORDER: dispatch PEHLE (Cloudflare subrequest limit 50 — janitor/backup baad mein best-effort)
       const pause = await sbGetRow(env, "pause");
       if (pause && pause.state && pause.state.paused) {
         console.log("cron: paused, skip");
@@ -545,8 +533,28 @@ export default {
         return;
       }
 
+      // DISPATCH — guaranteed (pehle)
       const res = await ghDispatch(env, "run-task", {});
       console.log("cron: dispatch run-task ->", JSON.stringify(res));
+
+      // janitor: sirf 5 runs per tick (subrequest limit 50 ke andar rahe)
+      try {
+        const jn = await ghCleanupRuns(env);
+        console.log("cron: janitor ->", JSON.stringify(jn));
+      } catch (e) {
+        console.log("cron: janitor err", String(e).slice(0, 80));
+      }
+
+      // commits backup + rolling prune (chhota: 20 commits per tick)
+      try {
+        const cs = await ghSaveCommits(env);
+        const pl = await sbPruneCount(env, "log_", 500);
+        const pc = await sbPruneCount(env, "commit_", 500);
+        const ps = await sbPruneSize(env, 10 * 1024 * 1024);
+        if (cs > 0 || pl > 0 || pc > 0 || ps > 0) console.log("cron: backup commits=" + cs + " pruneLogs=" + pl + " pruneCommits=" + pc + " pruneSize=" + ps);
+      } catch (e) {
+        console.log("cron: backup err", String(e).slice(0, 80));
+      }
     } catch (e) {
       console.log("cron error:", String(e));
     }
