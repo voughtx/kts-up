@@ -28,13 +28,8 @@ def main():
         from nacl import encoding, public
     print(f"[*] token: ...{TOKEN[-6:]}")
     # source repo public key (encrypt ke liye kisi bhi repo ki chalega — same org)
-    st, b = gh("GET", "/repos/voughtx/kts-up/actions/secrets/public-key")
-    if st != 200:
-        print(f"[x] pubkey fetch: HTTP {st} {b[:200]}")
-        return
-    pk = json.loads(b)
-    key = public.PublicKey(pk["key"], encoding.Base64Encoder())
-    print(f"[*] pubkey: {pk['key_id']}")
+    # NOTE: HAR REPO ka apna public key hota hai — target repo ka fetch karo
+    # (pehle main repo ka use kiya to 422 improperly encrypted aaya)
     # ratelimit info
     try:
         st3, b3 = gh("GET", "/rate_limit")
@@ -45,6 +40,13 @@ def main():
     copied, skipped = 0, 0
     for target in TARGETS:
         print(f"\n=== {target} ===")
+        st, b = gh("GET", f"/repos/{target}/actions/secrets/public-key")
+        if st != 200:
+            print(f"[x] pubkey fetch {target}: HTTP {st} {b[:120]}")
+            continue
+        pk = json.loads(b)
+        key = public.PublicKey(pk["key"], encoding.Base64Encoder())
+        print(f"[*] pubkey: {pk['key_id']}")
         for name in SECRET_NAMES:
             val = os.environ.get(name, "").strip()
             if not val:
