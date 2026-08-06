@@ -1363,11 +1363,42 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
             cid=ent.id if hasattr(ent,"id") else ent
             results=[]
             from pyrogram.types import InputMediaDocument
-            # FAST: parallel upload (send_document + progress) -> media group (file_ids se instant)
-            _p(f"[*] uploading {len(parts)} parts (parallel x{min(3,len(parts))})...")
-            sem=_ac.Semaphore(min(3,len(parts)))
+            # ==== MULTI-BOT UPLOAD ====
+            # Bot tokens (KEY_22-27) + user — har part alag session se parallel upload
+            _btoks=[_o.environ.get(f"KEY_{i}","").strip() for i in range(22,28)]
+            _btoks=[t for t in _btoks if t]
+            _sessions=[app]  # user pehle
+            try:
+                for _bi,_bt in enumerate(_btoks):
+                    _b= _Pyro(f"mb{_bi}",api_id=int(_KID),api_hash=_KHASH,bot_token=_bt)
+                    await _b.start()
+                    try:
+                        _bme=await _b.get_me()
+                        # channel ka koi bhi message bot ko forward karo (peer register)
+                        _fwd_m=await app.get_messages(cid,1)
+                        if _fwd_m and not _fwd_m.empty:
+                            await app.forward_messages(_bme.username or f"mb{_bi}",cid,_fwd_m.id)
+                    except Exception:
+                        pass
+                    _sessions.append(_b)
+                _p(f"[*] multi-bot upload: {len(_sessions)} sessions (user+{len(_btoks)} bots)")
+                await _ac.sleep(6)  # peer register
+            except Exception as _ex:
+                _p(f"[!] bots start fail ({str(_ex)[:60]}) — sirf user se upload")
+                for _b in _sessions[1:]:
+                    try:
+                        await _b.stop()
+                    except Exception:
+                        pass
+                _sessions=[app]
+            # har part ko session assign (round-robin)
+            _nup=len(parts)
+            _nse=len(_sessions)
+            _p(f"[*] uploading {_nup} parts (multi-session x{min(_nse,_nup)})...")
+            _sem=_ac.Semaphore(min(_nse,_nup))
             async def _up_one(idx,p):
-                async with sem:
+                async with _sem:
+                    _sess=_sessions[idx%_nse]
                     path=f"{outd}/{p}"
                     tsz=_o.path.getsize(path)
                     t0=_t.time()
@@ -1376,15 +1407,19 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                         now=_t.time()
                         if now-_lt[0]>=10 and tot>0:
                             sp=(cur-_last[0])/(now-_lt[0])/(1024*1024)
-                            _p(f"   [up] part {idx+1}/{len(parts)}: {cur/(1024*1024):.0f}/{tot/(1024*1024):.0f} MB ({cur*100//tot}%) | {sp:.1f} MB/s")
+                            _p(f"   [up] part {idx+1}/{_nup} (s{idx%_nse}): {cur/(1024*1024):.0f}/{tot/(1024*1024):.0f} MB ({cur*100//tot}%) | {sp:.1f} MB/s")
                             _last[0]=cur; _lt[0]=now
-                    m=await app.send_document(cid,path,disable_notification=True,progress=_prog)
+                    try:
+                        m=await _sess.send_document(cid,path,disable_notification=True,progress=_prog)
+                    except Exception as _ex:
+                        _p(f"   [!] part {idx+1} sess{idx%_nse} fail ({str(_ex)[:50]}) — retry user...")
+                        m=await app.send_document(cid,path,disable_notification=True,progress=_prog)
                     fid=m.document.file_id or ""
-                    _p(f"   [ok] part {idx+1}/{len(parts)} uploaded ({tsz/(1024*1024):.0f} MB)")
+                    _p(f"   [ok] part {idx+1}/{_nup} uploaded via s{idx%_nse} ({tsz/(1024*1024):.0f} MB)")
                     return idx,fid,m.id
             ups=await _ac.gather(*[_up_one(i,p) for i,p in enumerate(parts)])
             ups.sort(key=lambda x:x[0])
-            # temp messages delete
+            # temp messages delete (user se)
             try:
                 await app.delete_messages(cid,[m_id for _,_,m_id in ups])
             except Exception:
@@ -1405,6 +1440,12 @@ def _split_media_group(link,base,cap,thumb,name="video.mp4"):
                         fid2=msg.document.file_id or ""
                     results.append({"part":ci+pi+1,"fid":fid2,"mid":msg.id})
                 _p(f"   [ok] block {ci//10+1} sent ({len(msgs)} parts)")
+            # bots stop
+            for _b in _sessions[1:]:
+                try:
+                    await _b.stop()
+                except Exception:
+                    pass
             return results
         except Exception as ex:
             _p(f"[x] media group fail: {str(ex)[:200]}")
