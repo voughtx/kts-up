@@ -25,8 +25,8 @@ AID = int(os.environ.get("KEY_16", "0").strip())
 AHASH = os.environ.get("KEY_17", "").strip()
 BOT1 = os.environ.get("KEY_22", "").strip()
 MB = 1024 * 1024
-DC2 = ("149.154.167.51", 443)   # best DC from round 2
-DC5 = ("91.108.56.130", 443)
+DC2 = (2, "149.154.167.51", 443)   # best DC from round 2
+DC5 = (5, "91.108.56.130", 443)
 
 def make_file(path, size):
     with open(path, "wb") as f:
@@ -44,7 +44,7 @@ async def resolve_chat(client):
 async def bot_session(dc=None, tag=""):
     c = TelegramClient(StringSession(), AID, AHASH, connection_retries=2)
     if dc:
-        c.session.set_dc(dc[0], dc[1], 443)
+        c.session.set_dc(dc[0], dc[1], dc[2])
     await c.connect()
     await c.start(bot_token=BOT1)
     return c
