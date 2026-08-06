@@ -74,9 +74,9 @@ async def main():
     print("\n[*] E) 4 stored sessions (1 bot), EK 240MB file split", flush=True)
     bot_sess = None
     for k, v in st.items():
-        if isinstance(v, list) and len(v) >= 4:
+        if isinstance(v, list) and len(v) >= 2:
             bot_sess = v[:4]
-            print(f"  using {k} sessions", flush=True)
+            print(f"  using {k} sessions ({len(bot_sess)})", flush=True)
             break
     if bot_sess:
         make_file("/tmp/te.bin", 240 * MB)
