@@ -319,10 +319,10 @@ async def upload_file_multi(clients: List[TelegramClient],
                             conns_per_client: int = 10,
                             part_size_kb: Optional[float] = None,
                             ) -> TypeInputFile:
-    """MULTI-SESSION upload: parts ko multiple clients (sessions) ke pipelined
-    senders pe distribute karta hai. Sessions SAME bot (user) ke hone chahiye
-    — parts same user ke file_id cache mein merge hote hain (empirically proven).
-    Returns InputFileBig (name='upload' — caller filename attribute add kare)."""
+    """MULTI-SESSION upload: file parts ko RANGE-wise har client (session) ko do.
+    Har client apne pipelined senders se apna range upload karta hai.
+    Sessions SAME bot (user) ke hone chahiye — parts same user ke file_id
+    cache mein merge hote hain (empirically proven). Returns InputFileBig."""
     file_id = helpers.generate_random_long()
     file_size = os.path.getsize(file.name)
     part_size = (part_size_kb or utils.get_appropriated_part_size(file_size)) * 1024
@@ -331,40 +331,53 @@ async def upload_file_multi(clients: List[TelegramClient],
     if not is_large:
         raise ValueError("upload_file_multi only for files > 10MB")
 
-    all_senders = []  # (client, UploadSender)
+    n = len(clients)
+    bounds = [(part_count * i // n, part_count * (i + 1) // n) for i in range(n)]
+    transferrers = []
     for c in clients:
         pt = ParallelTransferrer(c)
         await pt._init_upload(conns_per_client, file_id, part_count, is_large)
-        for s in pt.senders:
-            all_senders.append((c, s))
+        transferrers.append(pt)
 
-    ticker = 0
-    buffer = bytearray()
-    for data in stream_file(file):
-        if progress_callback:
-            r = progress_callback(file.tell(), file_size)
-            if inspect.isawaitable(r):
-                await r
-        if len(buffer) == 0 and len(data) == part_size:
-            _, sender = all_senders[ticker % len(all_senders)]
-            await sender.next(data)
-            ticker += 1
-            continue
-        new_len = len(buffer) + len(data)
-        if new_len >= part_size:
-            cutoff = part_size - len(buffer)
-            buffer.extend(data[:cutoff])
-            _, sender = all_senders[ticker % len(all_senders)]
-            await sender.next(bytes(buffer))
-            ticker += 1
-            buffer.clear()
-            buffer.extend(data[cutoff:])
-        else:
-            buffer.extend(data)
-    if len(buffer) > 0:
-        _, sender = all_senders[ticker % len(all_senders)]
-        await sender.next(bytes(buffer))
+    done = [0]
+    total_parts = part_count
 
-    for _, sender in all_senders:
-        await sender.disconnect()
+    async def upload_range(pt, start, end):
+        fh = open(file.name, "rb")  # har range ka apna handle (seek race se bachne ke liye)
+        fh.seek(start * part_size)
+        remaining = (end - start) * part_size
+        ticker = 0
+        buffer = bytearray()
+        while remaining > 0:
+            chunk = fh.read(min(1 << 20, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            if progress_callback:
+                r = progress_callback(fh.tell(), file_size)
+                if inspect.isawaitable(r):
+                    await r
+            if len(buffer) == 0 and len(chunk) == part_size:
+                await pt.upload(chunk)
+                done[0] += 1
+                continue
+            new_len = len(buffer) + len(chunk)
+            if new_len >= part_size:
+                cutoff = part_size - len(buffer)
+                buffer.extend(chunk[:cutoff])
+                await pt.upload(bytes(buffer))
+                done[0] += 1
+                buffer.clear()
+                buffer.extend(chunk[cutoff:])
+            else:
+                buffer.extend(chunk)
+        if len(buffer) > 0:
+            await pt.upload(bytes(buffer))
+            done[0] += 1
+        fh.close()
+
+    await asyncio.gather(*[upload_range(pt, a, b) for pt, (a, b) in zip(transferrers, bounds)])
+
+    for pt in transferrers:
+        await pt._cleanup()
     return InputFileBig(file_id, part_count, "upload")
