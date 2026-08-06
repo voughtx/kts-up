@@ -113,7 +113,7 @@ async def main():
             c = TelegramClient(StringSession(ss), AID, AHASH)
             await c.connect()
             clients.append(c)
-        await run_test("E4", clients, "/tmp/t4.bin", 10, "t4.bin")
+        await run_test("E4", clients, "/tmp/t4.bin", 15, "t4.bin")
         for c in clients:
             await c.disconnect()
     else:
