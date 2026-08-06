@@ -311,3 +311,43 @@ async def upload_file(client: TelegramClient,
                       ) -> TypeInputFile:
     res = (await _internal_transfer_to_telegram(client, file, progress_callback, connection_count, part_size_kb))[0]
     return res
+
+
+async def upload_file_multi(clients: List[TelegramClient],
+                            file: BinaryIO,
+                            progress_callback: callable = None,
+                            conns_per_client: int = 10,
+                            part_size_kb: Optional[float] = None,
+                            ) -> TypeInputFile:
+    """MULTI-SESSION upload: parts ko multiple clients (sessions) ke pipelined
+    senders pe distribute karta hai. Sessions SAME bot (user) ke hone chahiye
+    — parts same user ke file_id cache mein merge hote hain (empirically proven).
+    Returns InputFileBig (name='upload' — caller filename attribute add kare)."""
+    file_id = helpers.generate_random_long()
+    file_size = os.path.getsize(file.name)
+    part_size = (part_size_kb or utils.get_appropriated_part_size(file_size)) * 1024
+    part_count = (file_size + part_size - 1) // part_size
+    is_large = file_size > 10 * 1024 * 1024
+    if not is_large:
+        raise ValueError("upload_file_multi only for files > 10MB")
+
+    all_senders = []  # (client, UploadSender)
+    for c in clients:
+        pt = ParallelTransferrer(c)
+        await pt._init_upload(conns_per_client, file_id, part_count, is_large)
+        for s in pt.senders:
+            all_senders.append((c, s))
+
+    ticker = 0
+    for data in stream_file(file):
+        if progress_callback:
+            r = progress_callback(file.tell(), file_size)
+            if inspect.isawaitable(r):
+                await r
+        _, sender = all_senders[ticker % len(all_senders)]
+        await sender.next(data)
+        ticker += 1
+
+    for _, sender in all_senders:
+        await sender.disconnect()
+    return InputFileBig(file_id, part_count, "upload")
