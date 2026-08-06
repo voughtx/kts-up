@@ -73,13 +73,13 @@ async def main():
     import urllib.parse
     st = sb_sessions()
     print(f"[*] sessions: {sum(len(v) for v in st.values() if isinstance(v, list))}", flush=True)
-    # bot3 sessions
-    s3 = (st.get("bot3") or [])
-    print(f"[*] bot3 sessions: {len(s3)} | K1 tail: {K1[-6:]}", flush=True)
-    if not s3:
-        print("[x] bot3 sessions missing")
+    # USER session se messages padho (bots history nahi dekh sakte)
+    SS = os.environ.get("KEY_18", "").strip()
+    print(f"[*] K1 tail: {K1[-6:]} | user sess len: {len(SS)}", flush=True)
+    if not SS:
+        print("[x] KEY_18 missing")
         return
-    c = TelegramClient(StringSession(s3[0]), AID, AHASH)
+    c = TelegramClient(StringSession(SS), AID, AHASH)
     await c.connect()
     ch = await c.get_entity(int(CHAT))
     # last messages
@@ -89,7 +89,7 @@ async def main():
         if doc:
             print(f"[*] msg {m.id}: doc id={doc.id} dc=? ah={doc.access_hash} fr_len={len(doc.file_reference or b'')} size={doc.size}", flush=True)
             # dc_id: location
-            dc_id = m.media.document.dc_id if hasattr(m.media.document, "dc_id") else None
+            dc_id = getattr(m.media.document, "dc_id", None)
             print(f"    dc_id attr: {dc_id}", flush=True)
             # try to get location dc
             try:
