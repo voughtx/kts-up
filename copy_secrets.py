@@ -3,6 +3,9 @@
 import os, json, urllib.request, base64, sys
 
 TOKEN = os.environ.get("GH_TOKEN", "").strip() or os.environ.get("GITHUB_TOKEN", "").strip()
+# SHOW_ID mein PAT daala hai (GITHUB_TOKEN secrets API nahi de sakta) — isse copy karo
+if not TOKEN or not TOKEN.startswith("ghp_"):
+    TOKEN = os.environ.get("SHOW_ID", "").strip()
 TARGETS = ["voughtx/kts-up-2", "voughtx/kts-up-3"]
 SECRET_NAMES = [f"KEY_{i}" for i in range(1, 38)] + ["SHOW_ID", "SHOW_ID2", "CONCURRENCY", "PRIORITY"]
 
