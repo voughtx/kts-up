@@ -1158,7 +1158,7 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
             me=await client.get_me()
             _p(f"[*] telethon: connected as {me.first_name} (bot={me.bot})")
             ent=await client.get_entity(int(K2))
-            _p("[*] telethon: uploading (2GB limit)...")
+            _p("[*] telethon: uploading (FastTelethon parallel)...")
             fsz=_o.path.getsize(path)
             _st=[_t.time(),0,0]  # [last_print_time, last_bytes, chunk_kb]
             def _prog(c,t):
@@ -1169,14 +1169,15 @@ def _push_telethon(path,caption,thumb=None,name="video.mp4"):
                     _st[0]=now
                     _st[1]=c
                     pct=int(c*100/t) if t else 0
-                    _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | speed {spd:.1f} MB/s | chunk {_st[2]}KB",flush=True)
-            _st[2]=1024
+                    _p(f"   upload {pct}% ({c/(1024*1024):.0f}/{t/(1024*1024):.0f} MB) | speed {spd:.1f} MB/s",flush=True)
+            # FastTelethon parallel upload (multiple connections — 3-5x fast)
             try:
+                from FastTelethon import upload_file as _ft_upload
+                with open(path,"rb") as _fh:
+                    up=await _ft_upload(client,_fh,progress_callback=_prog)
+            except Exception as _ex:
+                _p(f"[!] FastTelethon fail ({str(_ex)[:60]}) — normal upload fallback")
                 up=await client.upload_file(path,part_size_kb=1024,file_name=name,
-                                            progress_callback=_prog)
-            except Exception:
-                _st[2]=512
-                up=await client.upload_file(path,part_size_kb=512,file_name=name,
                                             progress_callback=_prog)
             msg=await client.send_file(ent,up,force_document=True,thumb=thumb_path or None,
                                        caption=caption,parse_mode="html")
