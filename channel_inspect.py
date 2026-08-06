@@ -42,9 +42,9 @@ async def main():
             mt = "text"
         cap = (m.message or "")[:70].replace("\n", " | ")
         if mt == "text":
-                print(f"{m.id} | TEXT | {cap}", flush=True)
-            else:
-                print(f"{m.id} | {mt} | {fn} | {th} | {sz} | {cap}", flush=True)
+            print(f"{m.id} | TEXT | {cap}", flush=True)
+        else:
+            print(f"{m.id} | {mt} | {fn} | {th} | {sz} | {cap}", flush=True)
     await c.disconnect()
     print("[done]", flush=True)
 
