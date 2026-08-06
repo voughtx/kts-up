@@ -20,7 +20,7 @@ async def main():
     await c.connect()
     ch = await c.get_entity(int(CHAT))
     print(f"[*] chat: {getattr(ch, 'title', ch)}", flush=True)
-    msgs = await c.get_messages(ch, min_id=515, max_id=585)
+    msgs = await c.get_messages(ch, min_id=300, max_id=585)
     msgs = sorted(msgs, key=lambda m: m.id)
     for m in msgs:
         mt = "?"
@@ -41,7 +41,10 @@ async def main():
         elif m.text:
             mt = "text"
         cap = (m.message or "")[:70].replace("\n", " | ")
-        print(f"{m.id} | {mt} | {fn} | {th} | {sz} | {cap}", flush=True)
+        if mt == "text":
+                print(f"{m.id} | TEXT | {cap}", flush=True)
+            else:
+                print(f"{m.id} | {mt} | {fn} | {th} | {sz} | {cap}", flush=True)
     await c.disconnect()
     print("[done]", flush=True)
 
