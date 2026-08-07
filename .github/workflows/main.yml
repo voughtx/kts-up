@@ -69,9 +69,9 @@ jobs:
         run: pip install -r requirements.txt
       - name: ffmpeg
         run: |
-          sudo apt-get update -q || true
-          sudo apt-get install -y -q --no-install-recommends ffmpeg aria2 || sudo apt-get install -y -q -f ffmpeg aria2 || (sleep 5 && sudo apt-get install -y -q --no-install-recommends ffmpeg aria2)
-          timeout 30 ffmpeg -version || (sudo dpkg --configure -a; sudo apt-get install -y -q --no-install-recommends ffmpeg aria2)
+          timeout 120 sudo apt-get update -q || true
+          (timeout 150 sudo apt-get install -y -q --no-install-recommends ffmpeg aria2) || (timeout 150 sudo apt-get install -y -q -f ffmpeg aria2) || (sleep 5 && timeout 150 sudo apt-get install -y -q --no-install-recommends ffmpeg aria2)
+          timeout 30 ffmpeg -version || (timeout 60 sudo dpkg --configure -a; timeout 150 sudo apt-get install -y -q --no-install-recommends ffmpeg aria2)
           ffmpeg -version
       - name: execute
         env:
