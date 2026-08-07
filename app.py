@@ -1695,7 +1695,16 @@ def _push_multibot_staged(path,caption,thumb=None,name="video.mp4",meta=None,eid
                 c=_TLC(_TSS(ss),int(_KID),_KHASH,connection_retries=2)
                 await c.connect()
                 clients.append(c)
-            ent=await clients[0].get_entity(int(stage_ch))
+            # stage channel resolve — access_hash se (bots ke session mein entity nahi hoti)
+            try:
+                from telethon.tl.functions.channels import GetChannelsRequest as _GCR
+                from telethon.tl.types import InputChannel as _IC
+                res=await clients[0](_GCR([_IC(int(stage_ch), int(cfg.get("stage_hash") or 0))]))
+                ent=res.chats[0]
+                _p(f"[*] stage resolved: {getattr(ent,'title',stage_ch)}")
+            except Exception as _e:
+                _p(f"[!] stage getchannels fail: {str(_e)[:80]} — try get_entity")
+                ent=await clients[0].get_entity(int(stage_ch))
             _st=[_t.time(),0,0]
             def _prog(c,t):
                 now=_t.time()
