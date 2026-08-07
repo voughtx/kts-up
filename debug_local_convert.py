@@ -3,8 +3,22 @@ import os, sys, json, re, subprocess, base64, urllib.request, urllib.parse, hash
 from Crypto.Cipher import AES
 
 API = "https://api.kartoons.me/api"
+# pool token (Supabase tk_voughtx_kts-up idx 0) — captcha KEY_3 403 de raha hai
+SB_URL = os.environ.get("KEY_20", "").strip().rstrip("/")
+SB_KEY = os.environ.get("KEY_21", "").strip()
 TOKEN = os.environ.get("KEY_3", "").strip()
 GCM = os.environ.get("KEY_10", "").strip()
+try:
+    url = f"{SB_URL}/rest/v1/progress?select=state&id=eq.tk_voughtx_kts-up&limit=1"
+    req = urllib.request.Request(url, headers={"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        arr = json.loads(r.read().decode())
+    st0 = (arr[0].get("state") or {}) if arr else {}
+    toks = st0.get("tokens") or []
+    if toks:
+        TOKEN = toks[0]
+except Exception as e:
+    print("[!] pool fetch fail:", str(e)[:60], flush=True)
 KEY9 = "bca9e0df1a5abb32906ca3f63ac04cef"
 EP = "687a500af27e6f8b5f5c1bdc"  # S5E1
 
