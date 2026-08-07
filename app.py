@@ -1699,9 +1699,11 @@ def _push_multibot_staged(path,caption,thumb=None,name="video.mp4",meta=None,eid
             try:
                 from telethon.tl.functions.channels import GetChannelsRequest as _GCR
                 from telethon.tl.types import InputChannel as _IC
-                res=await clients[0](_GCR([_IC(int(stage_ch), int(cfg.get("stage_hash") or 0))]))
+                _sid=str(stage_ch)
+                _ic_id=int(_sid[4:]) if _sid.startswith("-100") else int(_sid)  # raw id (bina -100)
+                res=await clients[0](_GCR([_IC(_ic_id, int(cfg.get("stage_hash") or 0))]))
                 ent=res.chats[0]
-                _p(f"[*] stage resolved: {getattr(ent,'title',stage_ch)}")
+                _p(f"[*] stage resolved: {getattr(ent,'title',_sid)}")
             except Exception as _e:
                 _p(f"[!] stage getchannels fail: {str(_e)[:80]} — try get_entity")
                 ent=await clients[0].get_entity(int(stage_ch))
