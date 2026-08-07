@@ -1,5 +1,6 @@
-# delete_s5.py — S5E1-16 (mids 778-793) channel + DB se delete (re-upload ke liye)
-import os, sys, asyncio, json, urllib.request, time
+# delete_s5.py — S5 ke SAARE episodes channel + DB se delete (re-upload ke liye)
+# Dynamic: Supabase se saare S5 records fetch, mids nikaal, channel se delete
+import os, sys, asyncio, json, urllib.request
 
 try:
     import cryptg  # noqa
@@ -15,10 +16,9 @@ AHASH = os.environ.get("KEY_17", "").strip()
 SS = os.environ.get("KEY_18", "").strip()
 SBURL = os.environ.get("KEY_20", "").strip().rstrip("/")
 SBKEY = os.environ.get("KEY_21", "").strip()
-MIDS = list(range(794, 802))  # 794..801 (S5E1-8 re-upload ke liye)
 
 def sb_fetch():
-    url = f"{SBURL}/rest/v1/episodes?select=id,mid,season,episode&limit=2000"
+    url = f"{SBURL}/rest/v1/episodes?select=id,mid,season,episode,title&limit=2000"
     req = urllib.request.Request(url, headers={"apikey": SBKEY, "Authorization": f"Bearer {SBKEY}"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode())
@@ -46,40 +46,40 @@ def mongo_delete(eids):
         print(f"[!] mongo fail: {str(e)[:80]}", flush=True)
 
 async def main():
-    print(f"[*] deleting channel msgs {MIDS[0]}..{MIDS[-1]}", flush=True)
-    c = TelegramClient(StringSession(SS), AID, AHASH)
-    await c.connect()
-    ch = await c.get_entity(int(CHAT))
-    msgs = await c.get_messages(ch, ids=MIDS)
-    n = 0
-    for m in msgs:
-        if m is None:
-            continue
-        n += 1
-        fn = m.document.attributes[0].file_name if m.document and m.document.attributes else ""
-        print(f"  {m.id}: {fn[:50]}", flush=True)
-    res = await c.delete_messages(ch, MIDS)
-    print(f"[ok] channel deleted: {n}", flush=True)
-    await c.disconnect()
-
     rows = sb_fetch()
-    targets = [r for r in rows if r.get("mid") in MIDS]
-    ids = [r["id"] for r in targets]
-    print(f"[*] db records: {len(targets)}", flush=True)
+    s5 = [r for r in rows if (r.get("season") or 0) == 5]
+    s5.sort(key=lambda x: x.get("episode") or 0)
+    print(f"[*] S5 records: {len(s5)}", flush=True)
+    mids = [r["mid"] for r in s5 if r.get("mid")]
+    ids = [r["id"] for r in s5]
+    print(f"[*] mids: {mids}", flush=True)
+    for r in s5:
+        print(f"  S5E{r.get('episode')} mid={r.get('mid')} {str(r.get('title'))[:30]}", flush=True)
+
+    if mids:
+        c = TelegramClient(StringSession(SS), AID, AHASH)
+        await c.connect()
+        ch = await c.get_entity(int(CHAT))
+        msgs = await c.get_messages(ch, ids=mids)
+        n = sum(1 for m in msgs if m is not None)
+        res = await c.delete_messages(ch, mids)
+        print(f"[ok] channel deleted: {n}", flush=True)
+        await c.disconnect()
+
     for eid in ids:
         st = sb_delete(eid)
         print(f"  supabase {eid[:12]}: {st}", flush=True)
     mongo_delete(ids)
-    # claims bhi clear (S5 wale — re-claim ho sakein)
+
+    # claims + postctl clear (fresh start)
     try:
         from pymongo import MongoClient
         uri = os.environ.get("KEY_7", "").strip()
         cli = MongoClient(uri, serverSelectionTimeoutMS=15000)
         db = cli.get_database("kts")
         r = db.claims.delete_many({})
-        print(f"[ok] claims cleared: {r.deleted_count}", flush=True)
         r2 = db.postctl.delete_many({})
-        print(f"[ok] postctl cleared: {r2.deleted_count}", flush=True)
+        print(f"[ok] claims={r.deleted_count} postctl={r2.deleted_count} cleared", flush=True)
         cli.close()
     except Exception as e:
         print(f"[!] mongo claims/postctl: {str(e)[:80]}", flush=True)
