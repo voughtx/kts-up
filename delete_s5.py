@@ -15,7 +15,7 @@ AHASH = os.environ.get("KEY_17", "").strip()
 SS = os.environ.get("KEY_18", "").strip()
 SBURL = os.environ.get("KEY_20", "").strip().rstrip("/")
 SBKEY = os.environ.get("KEY_21", "").strip()
-MIDS = list(range(778, 794))  # 778..793
+MIDS = list(range(794, 802))  # 794..801 (S5E1-8 re-upload ke liye)
 
 def sb_fetch():
     url = f"{SBURL}/rest/v1/episodes?select=id,mid,season,episode&limit=2000"
