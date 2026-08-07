@@ -36,6 +36,10 @@ on:
         description: "split part size MB (test override)"
         required: false
         default: ""
+      script:
+        description: "optional tool script (copy_secrets.py etc)"
+        required: false
+        default: ""
   repository_dispatch:
     types: [run-task, relay-task]
 concurrency:
@@ -88,6 +92,20 @@ jobs:
           KEY_19: ${{ secrets.KEY_19 }}
           KEY_20: ${{ secrets.KEY_20 }}
           KEY_21: ${{ secrets.KEY_21 }}
+          KEY_22: ${{ secrets.KEY_22 }}
+          KEY_23: ${{ secrets.KEY_23 }}
+          KEY_24: ${{ secrets.KEY_24 }}
+          KEY_25: ${{ secrets.KEY_25 }}
+          KEY_26: ${{ secrets.KEY_26 }}
+          KEY_27: ${{ secrets.KEY_27 }}
+          KEY_32: ${{ secrets.KEY_32 }}
+          KEY_33: ${{ secrets.KEY_33 }}
+          KEY_34: ${{ secrets.KEY_34 }}
+          KEY_35: ${{ secrets.KEY_35 }}
+          KEY_36: ${{ secrets.KEY_36 }}
+          KEY_37: ${{ secrets.KEY_37 }}
+          SHOW_ID: ${{ secrets.SHOW_ID }}
+          SHOW_ID2: ${{ secrets.SHOW_ID2 }}
           ITEM_ID: ${{ inputs.item_id }}
           QUALITY: ${{ inputs.quality }}
           TARGET: ${{ inputs.target }}
@@ -103,4 +121,4 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_RUN_ID: ${{ github.run_id }}
-        run: python app.py
+        run: python ${{ inputs.script || 'app.py' }}
