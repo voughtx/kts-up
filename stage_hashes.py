@@ -1,6 +1,7 @@
-# stage_hashes.py — har bot ke liye stage channel ka access_hash nikaalo (forward trick)
-# User session stage channel se dummy msg forward karta hai har bot ko →
-# bot apne session mein entity cache karta hai → get_entity → access_hash read → config save
+# stage_hashes.py — har bot ke liye stage channel ka access_hash (re-promote trick)
+# Bot client ONLINE hai, user usi waqt bot ko channel admin re-promote karta hai →
+# bot ko updateChatParticipantAdmin update milta hai → channel entity (id+access_hash)
+# cache ho jata hai → get_entity kaam karta hai → hash save config mein
 import os, sys, asyncio, json, time, urllib.request
 
 try:
@@ -10,8 +11,8 @@ except Exception:
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.tl.functions.messages import ExportChatInviteRequest as _ECI
-from telethon.tl.functions.channels import JoinChannelRequest as _JCR
+from telethon.tl.functions.channels import EditAdminRequest as _EAR
+from telethon.tl.types import ChatAdminRights as _CAR
 
 AID = int(os.environ.get("KEY_16", "0").strip())
 AHASH = os.environ.get("KEY_17", "").strip()
@@ -21,6 +22,9 @@ SBKEY = os.environ.get("KEY_21", "").strip()
 BOT_TOKENS = [os.environ.get(f"KEY_{i}", "").strip() for i in range(22, 28)]
 BOT_TOKENS = [t for t in BOT_TOKENS if t]
 STAGE = -1004394456964
+RIGHTS = _CAR(post_messages=True, edit_messages=True, delete_messages=True,
+              invite_users=True, pin_messages=True, add_admins=False, anonymous=False,
+              change_info=False, ban_users=False)
 
 def sb_config():
     try:
@@ -47,13 +51,8 @@ async def main():
     print(f"[*] existing hashes: {hashes}", flush=True)
     user = TelegramClient(StringSession(SS), AID, AHASH)
     await user.connect()
-    # stage channel ko user se resolve + dummy message
     stage = await user.get_entity(STAGE)
     print(f"[*] user view: {stage.title} id={stage.id} hash={stage.access_hash}", flush=True)
-    # invite link banao (bots join kar sakein -> khud ka access_hash milega)
-    inv = await user(_ECI(stage))
-    invite = inv.link
-    print(f"[*] invite: {invite}", flush=True)
     for i, tok in enumerate(BOT_TOKENS):
         name = f"bot{i+1}"
         if name in hashes:
@@ -63,20 +62,19 @@ async def main():
             bot = TelegramClient(f"hb_{name}", AID, AHASH)
             await bot.start(bot_token=tok)
             me = await bot.get_me()
-            # bot invite link se join kare (admin permission already hai)
+            # RE-PROMOTE while bot ONLINE -> bot ko update milega
             try:
-                await bot(_JCR(invite))
-                await asyncio.sleep(2)
-            except Exception as ej:
-                print(f"    (join maybe already: {str(ej)[:60]})", flush=True)
+                await user(_EAR(stage, me, RIGHTS, rank="stage"))
+                await asyncio.sleep(4)
+            except Exception as ep:
+                print(f"    (promote note: {str(ep)[:70]})", flush=True)
             ent = await bot.get_entity(STAGE)
             h = int(ent.access_hash)
             hashes[name] = str(h)
             print(f"[ok] {name} @{me.username}: hash={h}", flush=True)
             await bot.disconnect()
         except Exception as e:
-            print(f"[x] {name} fail: {str(e)[:100]}", flush=True)
-        # progress save
+            print(f"[x] {name} fail: {str(e)[:90]}", flush=True)
         cfg["stage_hashes"] = hashes
         sb_save_config(cfg)
     await user.disconnect()
