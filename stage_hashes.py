@@ -60,7 +60,7 @@ async def main():
             await bot.start(bot_token=tok)
             me = await bot.get_me()
             # user se bot ko stage message forward
-            await user.forward_messages(me.username or f"bot{i+1}", STAGE, [dum.id])
+            await user.forward_messages(me.username or f"bot{i+1}", [dum.id], from_peer=STAGE)
             await asyncio.sleep(3)
             # bot ab entity cache karega
             ent = await bot.get_entity(STAGE)
