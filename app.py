@@ -1342,7 +1342,7 @@ def _push_multibot(path,caption,thumb=None,name="video.mp4"):
         return None,"multibot: no bot with >=2 sessions"
     # round-robin: filename hash se bot pick
     keys=sorted(bots.keys())
-    bot=keys[sum(ord(c) for c in (name or "x"))%len(keys)]
+    bot=keys[sum(ord(c) for c in (name or "x")+_o.environ.get("GITHUB_REPOSITORY",""))%len(keys)]
     sesses=bots[bot][:4]  # max 4 sessions
     n=len(sesses)
     fsz=_o.path.getsize(path)
@@ -1668,7 +1668,7 @@ def _push_multibot_staged(path,caption,thumb=None,name="video.mp4",meta=None,eid
     if not bots:
         return None,"staged: no sessions"
     keys=sorted(bots.keys())
-    bot=keys[sum(ord(c) for c in (name or "x"))%len(keys)]
+    bot=keys[sum(ord(c) for c in (name or "x")+_o.environ.get("GITHUB_REPOSITORY",""))%len(keys)]
     sesses=bots[bot][:4]
     n=len(sesses)
     fsz=_o.path.getsize(path)
