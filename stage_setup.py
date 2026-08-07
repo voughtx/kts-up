@@ -24,9 +24,9 @@ BOT_TOKENS = [t for t in BOT_TOKENS if t]
 
 RIGHTS = ChatAdminRights(
     post_messages=True, edit_messages=True, delete_messages=True,
-    invite_users=True, manage_call=True, pin_messages=True,
-    add_admins=False, anonymous=False, manage_chat=False,
-    change_info=False, ban_users=False, other=False, manage_video_chats=False
+    invite_users=True, pin_messages=True,
+    add_admins=False, anonymous=False,
+    change_info=False, ban_users=False
 )
 
 def sb_save(state):
