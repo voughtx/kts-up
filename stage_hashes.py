@@ -10,6 +10,8 @@ except Exception:
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.tl.functions.messages import ExportChatInviteRequest as _ECI
+from telethon.tl.functions.channels import JoinChannelRequest as _JCR
 
 AID = int(os.environ.get("KEY_16", "0").strip())
 AHASH = os.environ.get("KEY_17", "").strip()
@@ -48,8 +50,10 @@ async def main():
     # stage channel ko user se resolve + dummy message
     stage = await user.get_entity(STAGE)
     print(f"[*] user view: {stage.title} id={stage.id} hash={stage.access_hash}", flush=True)
-    dum = await user.send_message(stage, "hash-sync")
-    print(f"[*] dummy msg {dum.id} sent to stage", flush=True)
+    # invite link banao (bots join kar sakein -> khud ka access_hash milega)
+    inv = await user(_ECI(stage))
+    invite = inv.link
+    print(f"[*] invite: {invite}", flush=True)
     for i, tok in enumerate(BOT_TOKENS):
         name = f"bot{i+1}"
         if name in hashes:
@@ -59,10 +63,12 @@ async def main():
             bot = TelegramClient(f"hb_{name}", AID, AHASH)
             await bot.start(bot_token=tok)
             me = await bot.get_me()
-            # user se bot ko stage message forward
-            await user.forward_messages(me.username or f"bot{i+1}", [dum.id], from_peer=STAGE)
-            await asyncio.sleep(3)
-            # bot ab entity cache karega
+            # bot invite link se join kare (admin permission already hai)
+            try:
+                await bot(_JCR(invite))
+                await asyncio.sleep(2)
+            except Exception as ej:
+                print(f"    (join maybe already: {str(ej)[:60]})", flush=True)
             ent = await bot.get_entity(STAGE)
             h = int(ent.access_hash)
             hashes[name] = str(h)
