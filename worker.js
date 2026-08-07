@@ -21,10 +21,20 @@ async function sha256hex(s) {
 
 async function sbGet(env, table, query) {
   if (!env.SB_URL || !env.SB_KEY) return null;
-  const r = await fetch(`${env.SB_URL}/rest/v1/${table}?${query}`, {
-    headers: { apikey: env.SB_KEY, Authorization: `Bearer ${env.SB_KEY}`, "User-Agent": "kts-worker" },
-  });
-  if (!r.ok) return null;
+  let r;
+  try {
+    r = await fetch(`${env.SB_URL}/rest/v1/${table}?${query}`, {
+      headers: { apikey: env.SB_KEY, Authorization: `Bearer ${env.SB_KEY}`, "User-Agent": "kts-worker" },
+    });
+  } catch (e) {
+    console.log("sbGet fetch throw", table, String(e).slice(0, 120));
+    return null;
+  }
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    console.log("sbGet fail", table, r.status, txt.slice(0, 120));
+    return null;
+  }
   return r.json();
 }
 
@@ -43,10 +53,11 @@ async function sbPostRow(env, row) {
   return r.ok;
 }
 
-async function ghDispatch(env, event, payload) {
-  if (!env.GH_TOKEN || !env.GH_REPO) return { ok: false, err: "GH not configured" };
+async function ghDispatch(env, event, payload, repo) {
+  const rp = repo || env.GH_REPO || "";
+  if (!env.GH_TOKEN || !rp) return { ok: false, err: "GH not configured" };
   const body = { event_type: event, client_payload: payload || {} };
-  const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/dispatches`, {
+  const r = await fetch(`https://api.github.com/repos/${rp}/dispatches`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${env.GH_TOKEN}`,
@@ -60,9 +71,10 @@ async function ghDispatch(env, event, payload) {
   return { ok: true };
 }
 
-async function ghRunActive(env) {
-  if (!env.GH_TOKEN || !env.GH_REPO) return false;
-  const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/runs?status=in_progress&per_page=1`, {
+async function ghRunActive(env, repo) {
+  const rp = repo || env.GH_REPO || "";
+  if (!env.GH_TOKEN || !rp) return false;
+  const r = await fetch(`https://api.github.com/repos/${rp}/actions/runs?status=in_progress&per_page=1`, {
     headers: {
       Authorization: `Bearer ${env.GH_TOKEN}`,
       Accept: "application/vnd.github+json",
@@ -85,10 +97,11 @@ async function sbDeleteRow(env, id) {
   } catch (e) { return false; }
 }
 
-async function ghSaveCommits(env) {
-  if (!env.GH_TOKEN || !env.GH_REPO) return 0;
+async function ghSaveCommits(env, repo) {
+  const rp = repo || env.GH_REPO || "";
+  if (!env.GH_TOKEN || !rp) return 0;
   try {
-    const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/commits?per_page=20`, {
+    const r = await fetch(`https://api.github.com/repos/${rp}/commits?per_page=20`, {
       headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "kts-worker" },
     });
     if (!r.ok) return 0;
@@ -142,11 +155,12 @@ async function sbPruneSize(env, maxBytes) {
   } catch (e) { return 0; }
 }
 
-async function ghSaveRunLog(env, w) {
-  if (!env.SB_URL || !env.SB_KEY || !env.GH_TOKEN || !env.GH_REPO) return false;
+async function ghSaveRunLog(env, w, repo) {
+  const rp = repo || env.GH_REPO || "";
+  if (!env.SB_URL || !env.SB_KEY || !env.GH_TOKEN || !rp) return false;
   try {
     const hdrs = { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "kts-worker" };
-    const jr = await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/runs/${w.id}/jobs`, { headers: hdrs });
+    const jr = await fetch(`https://api.github.com/repos/${rp}/actions/runs/${w.id}/jobs`, { headers: hdrs });
     if (!jr.ok) {
       console.log("janitor: jobs fetch fail", w.id, jr.status);
       return false;
@@ -155,7 +169,7 @@ async function ghSaveRunLog(env, w) {
     let log = "";
     for (const j of jd.jobs || []) {
       try {
-        const lr = await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/jobs/${j.id}/logs`, { headers: hdrs, redirect: "manual" });
+        const lr = await fetch(`https://api.github.com/repos/${rp}/actions/jobs/${j.id}/logs`, { headers: hdrs, redirect: "manual" });
         if (lr.status === 301 || lr.status === 302) {
           const loc = lr.headers.get("location");
           if (loc) {
@@ -182,10 +196,23 @@ async function ghSaveRunLog(env, w) {
       lines = lines.concat(log.split("\n").slice(-60));
     }
     const txt = lines.join("\n").slice(-8000);
+    // speed parse (avg of last valid MB/s readings)
+    let speeds = [];
+    const spRe = /([\d.]+) MB\/s/g;
+    let sm;
+    while ((sm = spRe.exec(log)) !== null) {
+      const v = parseFloat(sm[1]);
+      if (v > 0 && v < 250) speeds.push(v);
+    }
+    const last10 = speeds.slice(-10);
+    const avgSpeed = last10.length ? Math.round((last10.reduce((a, b) => a + b, 0) / last10.length) * 10) / 10 : 0;
+    const repoNorm = String(rp || "").replace(/\//g, "_");
     const row = {
       id: `log_${w.id}`,
       state: {
         run_id: String(w.id),
+        repo: repoNorm,
+        avg_speed: avgSpeed,
         result: (w.conclusion || "") === "success" ? "success" : "failed",
         at: Math.floor(Date.now() / 1000),
         log: txt,
@@ -197,34 +224,45 @@ async function ghSaveRunLog(env, w) {
   }
 }
 
-async function ghCleanupRuns(env) {
-  if (!env.GH_TOKEN || !env.GH_REPO) return { del: 0, saved: 0 };
-  let del = 0, saved = 0;
+async function ghCleanupRuns(env, repo, budget) {
+  const rp = repo || env.GH_REPO || "";
+  if (!env.GH_TOKEN || !rp) return { del: 0, saved: 0, processed: 0 };
+  let del = 0, saved = 0, processed = 0;
   try {
-    const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/runs?per_page=50&status=completed`, {
+    const r = await fetch(`https://api.github.com/repos/${rp}/actions/runs?per_page=100&status=completed`, {
       headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "kts-worker" },
     });
-    if (!r.ok) return { del, saved };
+    if (!r.ok) return { del, saved, processed };
     const d = await r.json();
     const now = Date.now();
-    let processed = 0;
-    for (const w of d.workflow_runs || []) {
-      if (processed >= 5) break; // per tick limit (subrequest 50 limit)
+    // OLDEST-FIRST: purane runs pehle clean (naye 7-min fresh window mein rehte hain)
+    const list = (d.workflow_runs || []).slice().reverse();
+    for (const w of list) {
+      if (processed >= budget) break; // shared budget across repos (subrequest 50 limit)
       const done = new Date(w.updated_at).getTime();
       if (now - done < 7 * 60 * 1000) continue; // abhi bhi fresh ho sakta hai (logs finalize)
       processed++;
-      console.log("janitor: processing run", w.id, "age", Math.round((now - done) / 60000), "min");
-      const okSave = await ghSaveRunLog(env, w);
+      console.log("janitor:", rp, "run", w.id, "age", Math.round((now - done) / 60000), "min");
+      const okSave = await ghSaveRunLog(env, w, rp);
       if (okSave) saved++;
-      else continue; // save fail -> delete mat karo, agli tick par retry
-      const delr = await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/runs/${w.id}`, {
+      else {
+        // purane runs (>6h) ke logs GitHub se expire ho chuke hote hain —
+        // backup impossible, isliye delete anyway (naye runs ka save hamesha try hota hai)
+        const ageMin = (now - done) / 60000;
+        if (ageMin > 360) {
+          console.log("janitor:", rp, "run", w.id, "log save fail, age", Math.round(ageMin), "min -> delete anyway");
+        } else {
+          continue; // fresh run, save fail -> agli tick retry
+        }
+      }
+      const delr = await fetch(`https://api.github.com/repos/${rp}/actions/runs/${w.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "kts-worker" },
       });
       if (delr.ok) del++;
     }
   } catch (e) {}
-  return { del, saved };
+  return { del, saved, processed };
 }
 
 async function tgAlert(env, text) {
@@ -462,17 +500,35 @@ export default {
       return json((row && row.state) || { result: "none", at: 0 });
     }
 
+    if (url.pathname === "/api/diag") {
+      if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      let out = { sb_url: env.SB_URL || "", sb_key_len: (env.SB_KEY || "").length };
+      try {
+        const r = await fetch(`${env.SB_URL}/rest/v1/progress?select=state&id=eq.pause&limit=1`, {
+          headers: { apikey: env.SB_KEY, Authorization: `Bearer ${env.SB_KEY}`, "User-Agent": "kts-worker" },
+        });
+        out.status = r.status;
+        out.body = (await r.text()).slice(0, 200);
+      } catch (e) {
+        out.err = String(e).slice(0, 150);
+      }
+      return json(out);
+    }
+
     if (url.pathname === "/api/runlogs") {
       if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
-      const docs = await sbGet(env, "progress", "select=state&id=like.log%25&limit=500");
+      const lim = Math.min(parseInt(url.searchParams.get("limit") || "100", 10) || 100, 500);
+      const docs = await sbGet(env, "progress", "select=state&id=like.log%25&limit=2000");
       if (docs === null) return json({ error: "sb fail" }, 500);
       const list = (docs || [])
         .map((d) => d.state || {})
         .sort((a, b) => (b.at || 0) - (a.at || 0))
-        .slice(0, 100)
+        .slice(0, lim)
         .map((s) => ({
           run_id: s.run_id || "",
+          repo: s.repo || "",
           result: s.result || "?",
+          avg_speed: s.avg_speed || 0,
           at: s.at || 0,
           preview: (s.log || "").slice(0, 150),
         }));
@@ -480,6 +536,86 @@ export default {
     }
 
     // /api/commits (admin) — saved commit backups
+    if (url.pathname === "/api/status") {
+      if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      // LIVE per-repo status (app.py har progress pe update karta hai)
+      const docs = await sbGet(env, "progress", "select=id,state&id=like.status_%25&limit=20");
+      const out = {};
+      for (const d of docs || []) {
+        const slug = String(d.id || "").replace("status_", "");
+        out[slug] = d.state || {};
+      }
+      return json({ repos: out, at: Math.floor(Date.now() / 1000) });
+    }
+
+    if (url.pathname === "/api/analytics") {
+      if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      try {
+        // 1) run logs (per-repo analytics)
+        const logs = await sbGet(env, "progress", "select=state&id=like.log%25&limit=2000");
+        const byRepo = {};
+        let totalRuns = 0, okRuns = 0, failRuns = 0;
+        const day = 24 * 3600;
+        const now = Math.floor(Date.now() / 1000);
+        let runsToday = 0;
+        for (const d of logs || []) {
+          const st = d.state || {};
+          const repo = String(st.repo || "unknown").replace(/\//g, "_");
+          byRepo[repo] = byRepo[repo] || { runs: 0, ok: 0, fail: 0, last_at: 0, spds: [] };
+          byRepo[repo].runs++;
+          totalRuns++;
+          if (st.result === "success") { byRepo[repo].ok++; okRuns++; }
+          else { byRepo[repo].fail++; failRuns++; }
+          if ((st.at || 0) > now - day) runsToday++;
+          if ((st.at || 0) > byRepo[repo].last_at) byRepo[repo].last_at = st.at || 0;
+          if (st.avg_speed) byRepo[repo].spds.push(st.avg_speed);
+        }
+        // 2) episodes (throughput + quality)
+        const eps = await sbGet(env, "episodes", "select=*&limit=2000");
+        let epTotal = 0, epToday = 0, sizeTotal = 0;
+        const qMap = {};
+        const showMap = {};
+        for (const e of eps || []) {
+          epTotal++;
+          sizeTotal += e.size || 0;
+          if ((e.at || 0) > now - day) epToday++;
+          const q = (e.quality || "?").toLowerCase();
+          qMap[q] = (qMap[q] || 0) + 1;
+          const sh = e.show || "?";
+          showMap[sh] = (showMap[sh] || 0) + 1;
+        }
+        const byRepoOut = {};
+        for (const k of Object.keys(byRepo)) {
+          const sp = (byRepo[k].spds || []).slice(-15);
+          byRepoOut[k] = {
+            runs: byRepo[k].runs,
+            ok: byRepo[k].ok,
+            fail: byRepo[k].fail,
+            last_at: byRepo[k].last_at,
+            avg_speed: sp.length ? Math.round((sp.reduce((a, b) => a + b, 0) / sp.length) * 10) / 10 : 0,
+          };
+        }
+        // LIVE data merge (status rows se — abhi kya ho raha hai)
+        let live = {};
+        try {
+          const stRows = await sbGet(env, "progress", "select=id,state&id=like.status_%25&limit=20");
+          for (const d of stRows || []) {
+            const slug = String(d.id || "").replace("status_", "").replace(/\//g, "_");
+            live[slug] = d.state || {};
+          }
+        } catch (e) {}
+        return json({
+          runs: { total: totalRuns, ok: okRuns, fail: failRuns, today: runsToday },
+          live,
+          byRepo: byRepoOut,
+          episodes: { total: epTotal, today: epToday, size: sizeTotal, byQuality: qMap, byShow: showMap },
+          at: now,
+        });
+      } catch (e) {
+        return json({ error: String(e).slice(0, 120) }, 500);
+      }
+    }
+
     if (url.pathname === "/api/commits") {
       if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
       const docs = await sbGet(env, "progress", "select=state&id=like.commit%25&limit=500");
@@ -505,9 +641,17 @@ export default {
 
   async scheduled(event, env, ctx) {
     try {
-      // ORDER: dispatch PEHLE (Cloudflare subrequest limit 50 — janitor/backup baad mein best-effort)
+      // SAFETY: SB fail hone pe dispatch BAND (ci runs ki bauchhar na ho)
+      if (!env.SB_URL || !env.SB_KEY) {
+        console.log("cron: SB not configured, dispatch disabled");
+        return;
+      }
       const pause = await sbGetRow(env, "pause");
-      if (pause && pause.state && pause.state.paused) {
+      if (!pause) {
+        console.log("cron: sb fetch fail, dispatch disabled");
+        return;
+      }
+      if (pause.state && pause.state.paused) {
         console.log("cron: paused, skip");
         return;
       }
@@ -528,19 +672,48 @@ export default {
         }
       }
 
-      if (await ghRunActive(env)) {
-        console.log("cron: run already active, skip");
-        return;
+      // MULTI-REPO: saare repos ko dispatch (agar active run nahi hai to)
+      // CADENCE: run khud jaldi exit karta hai — cron har 5 min pe agli dispatch karta hai
+      const repos = (env.GH_REPOS || env.GH_REPO || "voughtx/kts-up").split(",").map(x => x.trim()).filter(Boolean);
+      for (const rp of repos) {
+        try {
+          if (await ghRunActive(env, rp)) {
+            console.log("cron:", rp, "active, skip");
+            continue;
+          }
+          const res = await ghDispatch(env, "run-task", {}, rp);
+          console.log("cron: dispatch", rp, "->", JSON.stringify(res));
+        } catch (e) {
+          console.log("cron: dispatch err", rp, String(e).slice(0, 80));
+        }
       }
 
-      // DISPATCH — guaranteed (pehle)
-      const res = await ghDispatch(env, "run-task", {});
-      console.log("cron: dispatch run-task ->", JSON.stringify(res));
-
-      // janitor: sirf 5 runs per tick (subrequest limit 50 ke andar rahe)
+      // JANITOR: MULTI-REPO — saare repos ki run history clean (log save -> delete)
+      // PER-REPO fair budget: har repo 3 runs/tick (5 repos x 3 = 15, subrequest 50 ke andar)
       try {
-        const jn = await ghCleanupRuns(env);
-        console.log("cron: janitor ->", JSON.stringify(jn));
+        let budget = 15;
+        let jnTot = { del: 0, saved: 0 };
+        for (const rp of repos) {
+          const jn = await ghCleanupRuns(env, rp, Math.min(3, budget));
+          jnTot.del += jn.del || 0;
+          jnTot.saved += jn.saved || 0;
+          budget -= jn.processed || 0;
+          if (budget <= 0) break;
+        }
+        console.log("cron: janitor ->", JSON.stringify(jnTot));
+        // commits backup + rolling prune (har repo ke liye)
+        for (const rp of repos) {
+          try {
+            const cs = await ghSaveCommits(env, rp);
+            const pl = await sbPruneCount(env, "log_", 500);
+            const pc = await sbPruneCount(env, "commit_", 300);
+            const ps = await sbPruneSize(env);
+            if (cs > 0 || pl > 0 || pc > 0 || ps > 0)
+              console.log("cron:", rp, "backup commits=" + cs + " pruneLogs=" + pl + " pruneCommits=" + pc + " pruneSize=" + ps);
+          } catch (e2) {
+            console.log("cron: commit backup err", String(e2).slice(0, 60));
+          }
+        }
       } catch (e) {
         console.log("cron: janitor err", String(e).slice(0, 80));
       }
