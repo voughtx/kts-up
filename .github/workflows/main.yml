@@ -48,6 +48,10 @@ on:
         description: "fix_order tool: postctl next_seq"
         required: false
         default: ""
+      force_relay:
+        description: "1 = direct skip, relay pool test"
+        required: false
+        default: "0"
       script:
         description: "optional tool script (copy_secrets.py etc)"
         required: false
@@ -132,6 +136,7 @@ jobs:
           DEL_MIDS: ${{ inputs.del_mids }}
           EIDS: ${{ inputs.eids }}
           SEQ: ${{ inputs.seq }}
+          FORCE_RELAY: ${{ inputs.force_relay }}
           MODE: ${{ inputs.mode }}
           LANG_MODE: ${{ inputs.lang_mode }}
           PRIORITY: ${{ secrets.PRIORITY }}
