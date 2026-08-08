@@ -39,9 +39,22 @@ def main():
     except Exception as ex:
         log("ipify fail:", str(ex)[:80])
     # 2) token list
-    toks = list(dict.fromkeys(re.findall(r'eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+', open('/tmp/toks.txt').read()))) if os.path.exists('/tmp/toks.txt') else []
+    toks = []
+    try:
+        SBURL = os.environ.get("KEY_20", "").rstrip("/")
+        SBKEY = os.environ.get("KEY_21", "")
+        if SBURL and SBKEY:
+            r0 = q.Request(f"{SBURL}/rest/v1/progress?select=state&id=eq.tk_voughtx_kts-up&limit=1",
+                           headers={"apikey": SBKEY, "Authorization": "Bearer " + SBKEY})
+            with q.urlopen(r0, timeout=20) as resp0:
+                arr = json.loads(resp0.read().decode())
+            st0 = (arr[0].get("state") or {}) if arr else {}
+            toks = [t for t in (st0.get("tokens") or []) if t]
+            log("tokens from supabase pool:", len(toks))
+    except Exception as ex:
+        log("supabase token load fail:", str(ex)[:80])
     if not toks:
-        log("no tokens file — using env KEY_3")
+        log("no tokens — using env KEY_3")
         toks = [os.environ.get("KEY_3", "")]
     log("tokens:", len(toks))
     tok = toks[0]
