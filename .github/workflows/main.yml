@@ -36,6 +36,18 @@ on:
         description: "split part size MB (test override)"
         required: false
         default: ""
+      del_mids:
+        description: "fix_order tool: message id range"
+        required: false
+        default: ""
+      eids:
+        description: "fix_order tool: comma eids"
+        required: false
+        default: ""
+      seq:
+        description: "fix_order tool: postctl next_seq"
+        required: false
+        default: ""
       script:
         description: "optional tool script (copy_secrets.py etc)"
         required: false
@@ -117,6 +129,9 @@ jobs:
           NO_FALLBACK: ${{ inputs.no_fallback }}
           CONCURRENCY: ${{ secrets.CONCURRENCY }}
           SPLIT_PART_MB: ${{ inputs.split_part_mb }}
+          DEL_MIDS: ${{ inputs.del_mids }}
+          EIDS: ${{ inputs.eids }}
+          SEQ: ${{ inputs.seq }}
           MODE: ${{ inputs.mode }}
           LANG_MODE: ${{ inputs.lang_mode }}
           PRIORITY: ${{ secrets.PRIORITY }}
