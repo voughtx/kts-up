@@ -636,6 +636,45 @@ export default {
       return json((row && row.state) || { run_id: id, result: "?", log: "(not found)" });
     }
 
+    if (url.pathname === "/api/kproxy") {
+      // kartoons.me API proxy — GH runner IPs blocked (403 Are you a human?)
+      // CF edge se fetch karta hai (CF-to-CF challenge bypass)
+      if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      const path = (url.searchParams.get("path") || "").trim();
+      if (!path.startsWith("/")) return json({ error: "bad path" }, 400);
+      const apiBase = env.KAPI || "https://api.kartoons.me/api";
+      const fwd = ["X-Challenge-Token", "X-Pow-Nonce", "X-Pow-Solution", "X-Challenge-Retry", "Authorization", "Referer", "Origin"];
+      const hdrs = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept": "application/json",
+        "Origin": "https://kartoons.me/",
+        "Referer": "https://kartoons.me/",
+      };
+      for (const h of fwd) {
+        const v = request.headers.get(h);
+        if (v) hdrs[h] = v;
+      }
+      let body = null;
+      if (request.method === "POST") {
+        try { body = await request.text(); } catch (e) { body = null; }
+        if (body) hdrs["Content-Type"] = "application/json";
+      }
+      try {
+        const r = await fetch(apiBase + path, {
+          method: request.method,
+          headers: hdrs,
+          body: body || undefined,
+        });
+        const txt = await r.text();
+        return new Response(txt, {
+          status: r.status,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        });
+      } catch (e) {
+        return json({ error: "proxy fetch fail: " + String(e).slice(0, 120) }, 502);
+      }
+    }
+
     return json({ error: "not found" }, 404);
   },
 
