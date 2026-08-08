@@ -66,6 +66,37 @@ def main():
     # 5) plain GET shows (no auth)
     st3, body3, _ = req(API + "/shows/68121c7f271f42dd3dd09f50")
     log(f"shows (no auth): HTTP {st3} | {body3[:150]}")
+    # 6) VIA TUNNEL RELAY (sandbox GCP IP)
+    TUN = os.environ.get("KRELAY", "https://carb-heaven-vocabulary-tours.trycloudflare.com")
+    log(f"testing via relay: {TUN}")
+    def treq(path, headers=None):
+        h2 = {"X-KTS-Key": "ktsrelay2026"}
+        if headers: h2.update(headers)
+        r2 = q.Request(f"{TUN}?path={u.quote(path)}", headers=h2)
+        try:
+            with q.urlopen(r2, timeout=45) as resp2:
+                return resp2.status, resp2.read().decode("utf-8", "replace")
+        except Exception as ex:
+            try: return ex.code, ex.read().decode()[:150]
+            except Exception: return 0, str(ex)[:150]
+    st4, body4 = treq("/auth/me", headers={"Authorization": f"Bearer {tok}"})
+    log(f"relay /auth/me: HTTP {st4} | {body4[:80]}")
+    if st4 == 200:
+        content2 = f"episode:{eid}"
+        st5, body5 = treq(f"/challenge/pow?content={u.quote(content2)}")
+        log(f"relay challenge: HTTP {st5} | {body5[:60]}")
+        if st5 == 200:
+            d2 = json.loads(body5).get("data") or {}
+            if d2.get("enabled") is False:
+                hdrs3 = {"X-Challenge-Token": tok, "Authorization": f"Bearer {tok}", "X-Challenge-Retry": "true"}
+            else:
+                sol2 = pow_solve(d2["nonce"], d2.get("bits", 16))
+                hdrs3 = {"X-Challenge-Token": tok, "Authorization": f"Bearer {tok}", "X-Challenge-Retry": "true",
+                         "X-Pow-Nonce": d2["nonce"], "X-Pow-Solution": sol2}
+            st6, body6 = treq(f"/shows/episode/{eid}/links", headers=hdrs3)
+            log(f"relay links: HTTP {st6} | {body6[:120]}")
+            if st6 == 200:
+                log(">>> RELAY WORKS FROM GH RUNNER!")
     log("DONE")
 
 if __name__ == "__main__":
