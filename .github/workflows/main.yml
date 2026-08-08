@@ -48,6 +48,10 @@ on:
         description: "fix_order tool: postctl next_seq"
         required: false
         default: ""
+      ignore_pause:
+        description: "1 = pause ignore (test mode)"
+        required: false
+        default: ""
       force_relay:
         description: "1 = direct skip, relay pool test"
         required: false
@@ -136,6 +140,7 @@ jobs:
           DEL_MIDS: ${{ inputs.del_mids }}
           EIDS: ${{ inputs.eids }}
           SEQ: ${{ inputs.seq }}
+          IGNORE_PAUSE: ${{ inputs.ignore_pause }}
           FORCE_RELAY: ${{ inputs.force_relay }}
           MODE: ${{ inputs.mode }}
           LANG_MODE: ${{ inputs.lang_mode }}
