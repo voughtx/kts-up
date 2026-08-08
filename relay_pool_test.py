@@ -56,30 +56,34 @@ def main():
             try: return ex.code, ex.read().decode()
             except Exception: return 0, str(ex)[:100]
     content=f"episode:{EID}"
-    # direct challenge+links
-    st,body=direct(f"/challenge/pow?content={u.quote(content)}",{})
-    log("direct challenge:", st)
-    d=json.loads(body).get("data") or {} if st==200 else {}
-    if st==200 and d.get("enabled") is not False:
-        sol=pow_solve(d["nonce"],d.get("bits",16))
-        hdrs={"X-Challenge-Token":tok,"Authorization":f"Bearer {tok}","X-Challenge-Retry":"true","X-Pow-Nonce":d["nonce"],"X-Pow-Solution":sol}
-        st2,b2=direct(f"/shows/episode/{EID}/links",hdrs)
-        log("direct links:", st2, b2[:60])
-        if st2!=200:
-            for name,url,typ in relays:
-                st3,b3=relay_call(name,url,typ,f"/challenge/pow?content={u.quote(content)}",{})
-                if st3!=200: log(f"relay {name} challenge:", st3); continue
-                d2=json.loads(b3).get("data") or {}
-                if d2.get("enabled") is False:
-                    hdrs2={"X-Challenge-Token":tok,"Authorization":f"Bearer {tok}","X-Challenge-Retry":"true"}
-                else:
-                    sol2=pow_solve(d2["nonce"],d2.get("bits",16))
-                    hdrs2={"X-Challenge-Token":tok,"Authorization":f"Bearer {tok}","X-Challenge-Retry":"true","X-Pow-Nonce":d2["nonce"],"X-Pow-Solution":sol2}
-                st4,b4=relay_call(name,url,typ,f"/shows/episode/{EID}/links",hdrs2)
-                log(f"relay {name} links:", st4, b4[:60])
-                if st4==200:
-                    log(f">>> RELAY {name} WORKS FROM GH RUNNER!")
-                    break
+    force=os.environ.get("FORCE_RELAY","0")=="1"
+    st,body=0,""
+    d={}
+    if not force:
+        st,body=direct(f"/challenge/pow?content={u.quote(content)}",{})
+        log("direct challenge:", st)
+        if st==200:
+            d=json.loads(body).get("data") or {}
+            if d.get("enabled") is not False:
+                sol=pow_solve(d["nonce"],d.get("bits",16))
+                hdrs={"X-Challenge-Token":tok,"Authorization":f"Bearer {tok}","X-Challenge-Retry":"true","X-Pow-Nonce":d["nonce"],"X-Pow-Solution":sol}
+                st2,b2=direct(f"/shows/episode/{EID}/links",hdrs)
+                log("direct links:", st2, b2[:60])
+    if force or st!=200 or 'st2' not in dir() or st2!=200:
+        for name,url,typ in relays:
+            st3,b3=relay_call(name,url,typ,f"/challenge/pow?content={u.quote(content)}",{})
+            if st3!=200: log(f"relay {name} challenge:", st3); continue
+            d2=json.loads(b3).get("data") or {}
+            if d2.get("enabled") is False:
+                hdrs2={"X-Challenge-Token":tok,"Authorization":f"Bearer {tok}","X-Challenge-Retry":"true"}
+            else:
+                sol2=pow_solve(d2["nonce"],d2.get("bits",16))
+                hdrs2={"X-Challenge-Token":tok,"Authorization":f"Bearer {tok}","X-Challenge-Retry":"true","X-Pow-Nonce":d2["nonce"],"X-Pow-Solution":sol2}
+            st4,b4=relay_call(name,url,typ,f"/shows/episode/{EID}/links",hdrs2)
+            log(f"relay {name} links:", st4, b4[:60])
+            if st4==200:
+                log(f">>> RELAY {name} WORKS FROM GH RUNNER!")
+                break
     log("DONE")
 main()
 sys.exit(0)
