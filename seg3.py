@@ -138,10 +138,8 @@ def test_ep(eid, label):
 def main():
     log("KEY9:", len(KEY9), "KEY10:", len(KEY10))
     for lbl, eid in [
-        ("BL2-E12", "681d0ca15edd6fa782ea65c9"),
-        ("BL2-E11", "681cfa6d5edd6fa782ea65c8"),
-        ("BEY-S3E52", "6989e260ea728ea14cc267d4"),
-        ("DOR-S22E14", "6a1f7c27acaa660ae62c5eb4"),
+        ("BL2-E13", "681d0cf15edd6fa782ea65ca"),
+        ("BL2-E14", "681d0d3d5edd6fa782ea65cb"),
     ]:
         try:
             test_ep(eid, lbl)
