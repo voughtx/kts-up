@@ -158,12 +158,22 @@ def main():
     segs=[l.strip() for l in vb.splitlines() if l.strip().startswith("http")]
     log("segments:", len(segs))
     if segs:
-        for k in range(min(3, len(segs))):
-            log(f"seg[{k}]: {segs[k][:80]}")
-            st,sb=fetch_bin(segs[k])
-            log(f"  -> HTTP {st} bytes={len(sb)}")
-            if st==200 and len(sb)>10000:
-                log(f"  >>> SEG {k} DOWNLOAD OK!")
+        seg0=segs[0]
+        log(f"seg[0]: {seg0[:80]}")
+        # VARIATION A: default
+        st,sb=fetch_bin(seg0)
+        log(f"  A default -> HTTP {st} bytes={len(sb)}")
+        # VARIATION B: Referer = variant url (same CDN domain)
+        st,sb=fetch_bin(seg0, {"Referer": vurl, "Origin": "/".join(vurl.split("/")[:3])})
+        log(f"  B referer=cdndomain -> HTTP {st} bytes={len(sb)}")
+        # VARIATION C: no referer (empty)
+        st,sb=fetch_bin(seg0, {"Referer": "", "Origin": ""})
+        log(f"  C no-ref -> HTTP {st} bytes={len(sb)}")
+        # VARIATION D: browser-ish accept
+        st,sb=fetch_bin(seg0, {"Accept": "*/*", "Referer": REF})
+        log(f"  D ref-page -> HTTP {st} bytes={len(sb)}")
+        if st==200 and len(sb)>10000:
+            log("  >>> SEGMENT OK!")
     log("DONE")
 
 main()
