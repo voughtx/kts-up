@@ -63,7 +63,16 @@ def fetch_bin(path, headers=None):
         try:
             r=q.Request(rurl, headers=rh)
             with q.urlopen(r,timeout=45) as resp:
-                return resp.status, resp.read()
+                b=resp.read()
+            if b[:1]==b"{":
+                try:
+                    jb=json.loads(b)
+                    if jb.get("error"):
+                        log(f"  relay bad body: {rurl[:45]}... -> {str(jb)[:50]}")
+                        continue
+                except Exception:
+                    pass
+            return resp.status, b
         except Exception as ex:
             code=getattr(ex,"code","?")
             log(f"  relay try: {rurl[:50]}... -> HTTP {code}")
