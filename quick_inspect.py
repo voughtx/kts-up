@@ -17,7 +17,7 @@ async def main():
     await cli.connect()
     try:
         ch=int(CHAT) if str(CHAT).lstrip("-").isdigit() else CHAT
-        msgs=await cli.get_messages(ch, ids=list(range(1855,1859)))
+        msgs=await cli.get_messages(ch, ids=[1856])
         for m in msgs:
             if m is None: continue
             media="?"
@@ -31,6 +31,9 @@ async def main():
             try: cap=(m.message or "")[:60].replace("\n"," ")
             except Exception: pass
             log(f"msg {m.id} | {media} | {cap}")
+            # delete ghost
+            await cli.delete_messages(ch, [m.id])
+            log(f"deleted {m.id}")
     finally:
         await cli.disconnect()
     log("DONE")
