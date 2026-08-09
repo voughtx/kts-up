@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-# fix_order.py — generic channel re-order tool (kts)
-# Env: DEL_MIDS="1466-1473"  EIDS="a,b,c"  SEQ=927
+# fix_order.py — delete channel msgs + cleanup + postctl reset
 import os, sys, json, asyncio, urllib.request as q
 
-def log(*a): print("[fixord]", *a, flush=True)
+def log(*a): print("[fxo]", *a, flush=True)
 
 KID = os.environ.get("KEY_16", "")
 KHASH = os.environ.get("KEY_17", "")
@@ -12,9 +11,9 @@ SBKEY = os.environ.get("KEY_21", "")
 MURI = os.environ.get("KEY_7", "")
 CHAT = os.environ.get("KEY_2", "")
 
-DEL_MIDS = os.environ.get("DEL_MIDS", "1466-1473")
+DEL_MIDS = os.environ.get("DEL_MIDS", "")
 EIDS = [x.strip() for x in os.environ.get("EIDS", "").split(",") if x.strip()]
-SEQ = int(os.environ.get("SEQ", "927"))
+SEQ = int(os.environ.get("SEQ", "1102"))
 
 def sb_get(path):
     req = q.Request(SBURL + path, headers={"apikey": SBKEY, "Authorization": "Bearer " + SBKEY})
@@ -50,10 +49,9 @@ async def get_msgs(cli, ids):
     return out
 
 async def main():
-    log("DEL_MIDS:", DEL_MIDS, "| EIDS:", len(EIDS), "| SEQ:", SEQ)
     lo, hi = (int(x) for x in DEL_MIDS.split("-"))
     ids = list(range(lo, hi + 1))
-    # 1) delete messages
+    log("delete msgs:", lo, "-", hi, "| eids:", len(EIDS), "| seq:", SEQ)
     bots = load_sessions()
     deleted = set()
     for bname in sorted(bots.keys()):
@@ -76,15 +74,13 @@ async def main():
                 await cli.disconnect()
         except Exception as ex:
             log(f"{bname}: FAIL {str(ex)[:150]}")
-    log(f"FINAL deleted: {len(deleted)}/{len(ids)} -> {sorted(deleted)}")
-    # 2) supabase rows delete
+    log(f"FINAL deleted: {len(deleted)}/{len(ids)}")
     for eid in EIDS:
         try:
             st = sb_delete(f"/rest/v1/episodes?id=eq.{eid}")
             log(f"sb del {eid[-6:]} -> {st}")
         except Exception as ex:
-            log(f"sb del err {eid[-6:]}: {str(ex)[:80]}")
-    # 3) mongo cleanup + postctl
+            log(f"sb del err: {str(ex)[:80]}")
     if MURI:
         try:
             import pymongo
@@ -96,10 +92,9 @@ async def main():
         db = mc.get_database("kts")
         r1 = db.episodes.delete_many({"id": {"$in": EIDS}})
         r2 = db.claims.delete_many({})
-        log(f"mongo episodes del={r1.deleted_count} claims cleared={r2.deleted_count}")
+        log(f"mongo del={r1.deleted_count} claims={r2.deleted_count}")
         r3 = db.postctl.update_one({"_id": "post"}, {"$set": {"next_seq": SEQ, "lock": "", "lock_at": 0}}, upsert=True)
-        pc = db.postctl.find_one({"_id": "post"}) or {}
-        log(f"postctl -> next_seq={pc.get('next_seq')}")
+        log(f"postctl -> {SEQ}")
         mc.close()
     log("DONE")
 
