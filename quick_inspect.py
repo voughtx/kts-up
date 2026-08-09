@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, sys, asyncio, urllib.request as q
+import os, sys, json, asyncio, urllib.request as q
 def log(*a): print("[qi]", *a, flush=True)
 KID=os.environ.get("KEY_16",""); KHASH=os.environ.get("KEY_17","")
 SBURL=os.environ.get("KEY_20","").rstrip("/"); SBKEY=os.environ.get("KEY_21","")
