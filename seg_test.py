@@ -160,6 +160,17 @@ def main():
     if segs:
         seg0=segs[0]
         log(f"seg[0]: {seg0[:80]}")
+        # UPLOAD seg0 URL to supabase for immediate sandbox test
+        try:
+            import urllib.request as qu
+            row={"id":"segtmp","state":{"url":seg0,"at":int(time.time())}}
+            req=qu.Request(SBURL+"/rest/v1/progress", data=json.dumps(row).encode(),
+                headers={"apikey":SBKEY,"Authorization":"Bearer "+SBKEY,"Content-Type":"application/json",
+                         "Prefer":"resolution=merge-duplicates"}, method="POST")
+            with qu.urlopen(req,timeout=20) as r:
+                log("segtmp uploaded:", r.status)
+        except Exception as ex:
+            log("segtmp upload fail:", str(ex)[:80])
         # VARIATION A: default
         st,sb=fetch_bin(seg0)
         log(f"  A default -> HTTP {st} bytes={len(sb)}")
