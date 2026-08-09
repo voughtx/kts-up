@@ -62,7 +62,7 @@ async def delete_range():
     """Delete all messages from DEL_FROM to DEL_TO (hardcoded)."""
     bots = load_sessions()
     ids = list(range(DEL_FROM, DEL_TO + 1))
-    log(f"deleting msgs {DEL_FROM}-{maxid} ({len(ids)} msgs)")
+    log(f"deleting msgs {DEL_FROM}-{DEL_TO} ({len(ids)} msgs)")
     deleted = set()
     for bname in sorted(bots.keys()):
         if len(deleted) == len(ids):
