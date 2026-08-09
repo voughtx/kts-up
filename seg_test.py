@@ -172,6 +172,13 @@ def main():
         # VARIATION D: browser-ish accept
         st,sb=fetch_bin(seg0, {"Accept": "*/*", "Referer": REF})
         log(f"  D ref-page -> HTTP {st} bytes={len(sb)}")
+        # VARIATION E: full browser sec-fetch headers
+        st,sb=fetch_bin(seg0, {"Referer": REF, "Accept": "video/mp2t,*/*;q=0.8",
+            "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "video"})
+        log(f"  E secfetch -> HTTP {st} bytes={len(sb)}")
+        # VARIATION F: Range partial
+        st,sb=fetch_bin(seg0, {"Referer": REF, "Accept": "*/*", "Range": "bytes=0-1023"})
+        log(f"  F range -> HTTP {st} bytes={len(sb)}")
         if st==200 and len(sb)>10000:
             log("  >>> SEGMENT OK!")
     log("DONE")
