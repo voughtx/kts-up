@@ -164,7 +164,7 @@ def main():
         try:
             import http.cookiejar as hcj
             cj=hcj.CookieJar()
-            opener=q.build_opener(hcj.HTTPCookieProcessor(cj))
+            opener=q.build_opener(q.HTTPCookieProcessor(cj))
             reqp=opener.open(q.Request(vurl, headers={"User-Agent":UA,"Referer":REF,"Accept":"*/*"}), timeout=45)
             pb=reqp.read()
             log(f"cookie-test playlist direct: {reqp.status} {len(pb)} cookies={len(cj)}")
