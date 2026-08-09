@@ -162,5 +162,5 @@ def _main():
             log(">>> SEGMENT DOWNLOAD WORKS!")
     log("DONE")
 
-__main()
+_main()
 sys.exit(0)
