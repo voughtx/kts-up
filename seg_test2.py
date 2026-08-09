@@ -12,7 +12,7 @@ KEY9=os.environ.get("KEY_9","")
 KEY10=os.environ.get("KEY_10","")
 SBURL=os.environ.get("KEY_20","").rstrip("/")
 SBKEY=os.environ.get("KEY_21","")
-EID="681d0ca15edd6fa782ea65c9"  # BLUE LOCK S2E12 Flowers
+EID="681d0ca15edd6fa782ea65c9"  # BLUE LOCK S2E12 Flowers (overridden in main)
 
 def b64u(s):
     b=s.replace("-","+").replace("_","/"); b+="="*((4-len(b)%4)%4)
@@ -82,8 +82,24 @@ def fetch_text(path, headers=None):
     st,b=fetch_bin(path, headers)
     return st, b.decode("utf-8","replace")
 
-def main():
+EIDS_TEST = [
+    ("BL2-E12","681d0ca15edd6fa782ea65c9"),
+    ("BL2-E11","681cfa6d5edd6fa782ea65c8"),
+    ("BEY-S3E52","6989e260ea728ea14cc267d4"),
+]
+
+def test_one(eid, label):
+    global EID
+    EID=eid
+    log(f"===== TEST {label} =====")
+    _main()
+    log(f"===== END {label} =====\n")
+
+def _main():
     log("KEY9:", len(KEY9), "KEY10:", len(KEY10))
+    for lbl, eid in EIDS_TEST:
+        test_one(eid, lbl)
+    log("ALL DONE")
     # token from pool
     try:
         req=q.Request(SBURL+"/rest/v1/progress?select=state&id=eq.tk_voughtx_kts-up&limit=1", headers={"apikey":SBKEY,"Authorization":"Bearer "+SBKEY})
