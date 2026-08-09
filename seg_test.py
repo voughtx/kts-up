@@ -75,7 +75,10 @@ def fetch_bin(path, headers=None):
             return resp.status, b
         except Exception as ex:
             code=getattr(ex,"code","?")
-            log(f"  relay try: {rurl[:50]}... -> HTTP {code}")
+            bodyb=b""
+            try: bodyb=ex.read()[:120]
+            except Exception: pass
+            log(f"  relay try: {rurl[:45]}... -> HTTP {code} body={bodyb.decode('utf-8','replace')[:90]}")
     # direct
     try:
         r=q.Request(path, headers={"User-Agent":UA,"Referer":REF})
@@ -155,11 +158,12 @@ def main():
     segs=[l.strip() for l in vb.splitlines() if l.strip().startswith("http")]
     log("segments:", len(segs))
     if segs:
-        log("first seg:", segs[0][:90])
-        st,sb=fetch_bin(segs[0])
-        log("FIRST SEGMENT:", st, len(sb))
-        if st==200 and len(sb)>10000:
-            log(">>> SEGMENT DOWNLOAD WORKS via relay!")
+        for k in range(min(3, len(segs))):
+            log(f"seg[{k}]: {segs[k][:80]}")
+            st,sb=fetch_bin(segs[k])
+            log(f"  -> HTTP {st} bytes={len(sb)}")
+            if st==200 and len(sb)>10000:
+                log(f"  >>> SEG {k} DOWNLOAD OK!")
     log("DONE")
 
 main()
