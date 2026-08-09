@@ -11,7 +11,8 @@ SBKEY = os.environ.get("KEY_21", "")
 MURI = os.environ.get("KEY_7", "")
 CHAT = os.environ.get("KEY_2", "")
 
-DEL_FROM = 1654
+DEL_FROM = 1655
+DEL_TO = 1660  # hardcoded: E1-E5 (1655-1659) + poster (1660)
 EIDS = [
     "688c93d478acbac754fcaa55",  # S1E1
     "688c93d478acbac754fcaa56",  # S1E2
@@ -58,23 +59,9 @@ async def get_msgs(cli, ids):
     return out
 
 async def delete_range():
-    """Delete all messages from DEL_FROM up to latest."""
+    """Delete all messages from DEL_FROM to DEL_TO (hardcoded)."""
     bots = load_sessions()
-    # find latest msg id first
-    maxid = DEL_FROM
-    for bname in sorted(bots.keys()):
-        try:
-            cli = await connect(bots[bname][0])
-            try:
-                ch = int(CHAT) if str(CHAT).lstrip("-").isdigit() else CHAT
-                last = await cli.get_messages(ch, limit=1)
-                if last and last[0] and last[0].id > maxid:
-                    maxid = last[0].id
-            finally:
-                await cli.disconnect()
-        except Exception as ex:
-            log(f"{bname}: maxid probe FAIL {str(ex)[:100]}")
-    ids = list(range(DEL_FROM, maxid + 1))
+    ids = list(range(DEL_FROM, DEL_TO + 1))
     log(f"deleting msgs {DEL_FROM}-{maxid} ({len(ids)} msgs)")
     deleted = set()
     for bname in sorted(bots.keys()):
