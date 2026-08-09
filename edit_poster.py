@@ -91,7 +91,7 @@ async def main():
         # 3) EDIT the message media + caption
         try:
             from telethon.tl.types import InputMediaUploadedPhoto
-            res = await cli.edit_message(ch, POSTER_MID, file=tmp, caption=cap, parse_mode="html")
+            res = await cli.edit_message(ch, POSTER_MID, file=tmp, text=cap, parse_mode="html")
             log(f"EDIT RESULT: msg {res.id} | new caption: {(res.message or '')[:60]}")
             log(">>> POSTER EDITED OK!")
         except Exception as ex:
