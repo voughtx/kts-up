@@ -12,7 +12,7 @@ MURI = os.environ.get("KEY_7", "")
 CHAT = os.environ.get("KEY_2", "")
 
 DEL_FROM = 1655
-DEL_TO = 1660  # hardcoded: E1-E5 (1655-1659) + poster (1660)
+DEL_TO = 1661  # hardcoded: E1-E5 (1655-1659) + posters (1660,1661)
 EIDS = [
     "688c93d478acbac754fcaa55",  # S1E1
     "688c93d478acbac754fcaa56",  # S1E2
