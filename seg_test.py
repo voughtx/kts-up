@@ -160,6 +160,24 @@ def main():
     if segs:
         seg0=segs[0]
         log(f"seg[0]: {seg0[:80]}")
+        # COOKIE TEST: direct session (no relay) — playlist + segment with cookie jar
+        try:
+            import http.cookiejar as hcj
+            cj=hcj.CookieJar()
+            opener=q.build_opener(hcj.HTTPCookieProcessor(cj))
+            reqp=opener.open(q.Request(vurl, headers={"User-Agent":UA,"Referer":REF,"Accept":"*/*"}), timeout=45)
+            pb=reqp.read()
+            log(f"cookie-test playlist direct: {reqp.status} {len(pb)} cookies={len(cj)}")
+            if cj:
+                for c in cj:
+                    log(f"  cookie: {c.name}={c.value[:20]}")
+            segreq=opener.open(q.Request(seg0, headers={"User-Agent":UA,"Referer":REF,"Accept":"*/*"}), timeout=45)
+            sb=segreq.read()
+            log(f"cookie-test segment direct: {segreq.status} {len(sb)}")
+            if segreq.status==200 and len(sb)>10000:
+                log("  >>> COOKIE THEORY CONFIRMED!")
+        except Exception as ex:
+            log(f"cookie-test fail: {getattr(ex,'code','?')} {str(ex)[:80]}")
         # UPLOAD seg0 URL to supabase for immediate sandbox test
         try:
             import urllib.request as qu
