@@ -371,11 +371,25 @@ export default {
       const lim = Math.min(parseInt(url.searchParams.get("limit") || "100", 10) || 100, 500);
       const show = url.searchParams.get("show") || "";
       const stt = url.searchParams.get("status") || "";
-      let q = `select=*&order=at.desc&limit=${lim}`;
-      if (show) q += `&show=eq.${encodeURIComponent(show)}`;
-      if (stt) q += `&status=eq.${encodeURIComponent(stt)}`;
-      const docs = await sbGet(env, "episodes", q);
-      if (docs === null) return json({ error: "sb not configured" }, 500);
+      const all = url.searchParams.get("all") === "1";
+      const extra = (show ? `&show=eq.${encodeURIComponent(show)}` : "") + (stt ? `&status=eq.${encodeURIComponent(stt)}` : "");
+      let docs;
+      if (all) {
+        // ALL-TIME: paginate (supabase limit max 1000/req) up to 6000 rows
+        docs = [];
+        let off = 0;
+        while (off < 6000) {
+          const chunk = await sbGet(env, "episodes", `select=*&order=at.desc&limit=1000&offset=${off}${extra}`);
+          if (chunk === null) return json({ error: "sb not configured" }, 500);
+          if (!chunk.length) break;
+          docs.push(...chunk);
+          if (chunk.length < 1000) break;
+          off += 1000;
+        }
+      } else {
+        docs = await sbGet(env, "episodes", `select=*&order=at.desc&limit=${lim}${extra}`);
+        if (docs === null) return json({ error: "sb not configured" }, 500);
+      }
       return json(docs);
     }
 
@@ -387,19 +401,33 @@ export default {
     }
 
     if (url.pathname === "/api/stats") {
-      const docs = await sbGet(env, "episodes", "select=*&limit=500");
-      if (docs === null) return json({ error: "sb not configured" }, 500);
+      // ALL-TIME stats: paginate every episode row (up to 20000)
+      const docs = [];
+      let off = 0, fail = false;
+      while (off < 20000) {
+        const chunk = await sbGet(env, "episodes", `select=*&limit=1000&offset=${off}`);
+        if (chunk === null) { fail = true; break; }
+        if (!chunk.length) break;
+        docs.push(...chunk);
+        if (chunk.length < 1000) break;
+        off += 1000;
+      }
+      if (fail && !docs.length) return json({ error: "sb not configured" }, 500);
       const byShow = {};
-      let total = 0, totalSize = 0;
+      let total = 0, totalSize = 0, thumb = 0, today = 0, last24 = 0;
+      const nowS = Date.now() / 1000;
       for (const d of docs) {
         total++;
         totalSize += d.size || 0;
+        if (d.thumb) thumb++;
+        if (d.at && nowS - d.at < 86400) today++;
         const k = d.show || "?";
         byShow[k] = byShow[k] || { count: 0, size: 0 };
         byShow[k].count++;
         byShow[k].size += d.size || 0;
       }
-      return json({ total, totalSize, byShow });
+      last24 = docs.filter((d) => d.at && nowS - d.at < 86400).length;
+      return json({ total, totalSize, byShow, thumb, today, last24, allTime: true });
     }
 
     if (url.pathname === "/api/progress") {
@@ -518,12 +546,26 @@ export default {
     if (url.pathname === "/api/runlogs") {
       if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
       const lim = Math.min(parseInt(url.searchParams.get("limit") || "100", 10) || 100, 500);
-      const docs = await sbGet(env, "progress", "select=state&id=like.log%25&limit=2000");
-      if (docs === null) return json({ error: "sb fail" }, 500);
+      const all = url.searchParams.get("all") === "1";
+      let docs = [];
+      if (all) {
+        let off = 0;
+        while (off < 8000) {
+          const chunk = await sbGet(env, "progress", `select=state&id=like.log%25&limit=1000&offset=${off}`);
+          if (chunk === null) return json({ error: "sb fail" }, 500);
+          if (!chunk.length) break;
+          docs.push(...chunk);
+          if (chunk.length < 1000) break;
+          off += 1000;
+        }
+      } else {
+        docs = await sbGet(env, "progress", "select=state&id=like.log%25&limit=2000");
+        if (docs === null) return json({ error: "sb fail" }, 500);
+      }
       const list = (docs || [])
         .map((d) => d.state || {})
         .sort((a, b) => (b.at || 0) - (a.at || 0))
-        .slice(0, lim)
+        .slice(0, all ? 8000 : lim)
         .map((s) => ({
           run_id: s.run_id || "",
           repo: s.repo || "",
