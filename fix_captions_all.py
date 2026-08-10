@@ -87,18 +87,36 @@ async def main():
             cap = msg.message or ""
             # dims from video/document
             w = h = None
-            print(f"    [dbg] media_type={type(msg.media).__name__} video={msg.video is not None} doc={msg.document is not None}", flush=True)
             if msg.video:
                 w, h = msg.video.w, msg.video.h
-                print(f"    [dbg] video obj: w={w} h={h}", flush=True)
             if msg.document:
                 from telethon.tl.types import DocumentAttributeVideo
-                attrs = []
                 for a in msg.document.attributes:
-                    attrs.append(type(a).__name__)
                     if isinstance(a, DocumentAttributeVideo):
                         w, h = a.w, a.h
-                print(f"    [dbg] doc attrs={attrs} dims={w}x{h}", flush=True)
+            if (not w or not h) and msg.document:
+                # partial download: pehle ~4MB, ffprobe se height
+                import subprocess
+                try:
+                    p = f"/tmp/probe_{mid}.bin"
+                    if os.path.exists(p):
+                        os.remove(p)
+                    await client.download_file(msg.document, file=p, part=0, part_size=4*1024*1024)
+                    if os.path.exists(p) and os.path.getsize(p) > 0:
+                        pr = subprocess.run(
+                            f"ffprobe -v error -show_streams -of json {p}",
+                            shell=True, capture_output=True, text=True, timeout=40)
+                        try:
+                            jj = json.loads(pr.stdout)
+                            for st in (jj.get("streams") or []):
+                                if st.get("codec_type") == "video" and st.get("height"):
+                                    w, h = st["width"], st["height"]
+                                    break
+                        except Exception:
+                            pass
+                        print(f"    [dbg] partial {os.path.getsize(p)}B probe -> {w}x{h}", flush=True)
+                except Exception as e:
+                    print(f"    [dbg] partial dl fail: {str(e)[:60]}", flush=True)
             label = h_to_label(h)
             print(f"[S5E{ep} mid={mid}] dims={w}x{h} label={label} caption_q={'576p' in cap} caption_head={repr(cap[:60])}", flush=True)
             if label and "576p" in cap and label != "576p":
