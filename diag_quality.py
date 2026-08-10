@@ -27,16 +27,14 @@ try:
 except Exception as e:
     print("[!] relay fetch fail:", str(e)[:60], flush=True)
 
-TOKEN = ""
+TOKENS = []
 try:
     req = urllib.request.Request(f"{SB_URL}/rest/v1/progress?select=state&id=eq.tk_voughtx_kts-up&limit=1",
         headers={"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"})
     with urllib.request.urlopen(req, timeout=20) as r:
         arr = json.loads(r.read().decode())
-    toks = ((arr[0].get("state") or {}).get("tokens")) or [] if arr else []
-    if toks:
-        TOKEN = toks[0]
-        print(f"[ok] pool token ...{TOKEN[-6:]}", flush=True)
+    TOKENS = ((arr[0].get("state") or {}).get("tokens")) or [] if arr else []
+    print(f"[ok] pool tokens: {len(TOKENS)}", flush=True)
 except Exception as e:
     print("[!] pool fetch fail:", str(e)[:60], flush=True)
 
@@ -141,10 +139,17 @@ def ep_height(eid):
     ph = {}
     if ch.get("nonce"):
         ph = {"X-Pow-Nonce": ch["nonce"], "X-Pow-Solution": solve_pow(ch["nonce"], ch.get("bits", 16))}
-    hdrs = {"X-Challenge-Token": TOKEN, "Authorization": f"Bearer {TOKEN}", "X-Challenge-Retry": "true"}
-    hdrs.update(ph)
-    st, body = api(f"/shows/episode/{eid}/links", hdrs=hdrs)
-    if st != 200:
+    got = False
+    for tok in (TOKENS or [None]):
+        if tok is None:
+            break
+        hdrs = {"X-Challenge-Token": tok, "Authorization": f"Bearer {tok}", "X-Challenge-Retry": "true"}
+        hdrs.update(ph)
+        st, body = api(f"/shows/episode/{eid}/links", hdrs=hdrs)
+        if st == 200:
+            got = True
+            break
+    if not got:
         return None, f"links {st}"
     data = json.loads(body).get("data") or {}
     urls = []
