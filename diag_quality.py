@@ -134,11 +134,18 @@ def req_bin(path):
 def ep_height(eid):
     """Return height of first video segment, or None."""
     content = "episode:" + eid
-    st, body = api("/challenge/pow?content=" + urllib.parse.quote(content))
-    ch = (json.loads(body).get("data") or {}) if st == 200 else {}
     ph = {}
-    if ch.get("nonce"):
-        ph = {"X-Pow-Nonce": ch["nonce"], "X-Pow-Solution": solve_pow(ch["nonce"], ch.get("bits", 16))}
+    ch = None
+    for _try in range(3):
+        st, body = api("/challenge/pow?content=" + urllib.parse.quote(content))
+        ch = (json.loads(body).get("data") or {}) if st == 200 else {}
+        if ch.get("nonce"):
+            ph = {"X-Pow-Nonce": ch["nonce"], "X-Pow-Solution": solve_pow(ch["nonce"], ch.get("bits", 16))}
+            break
+        import time as _tt
+        _tt.sleep(3)
+    if not ph:
+        print(f"    [dbg] challenge data={json.dumps(ch)[:120]}", flush=True)
     got = False
     for tok in (TOKENS or [None]):
         if tok is None:
@@ -247,5 +254,5 @@ for ep, eid in EIDS.items():
         print(f"S5E{ep}: {'HEIGHT='+h if h else 'ERR '+str(err)}", flush=True)
     except Exception as e:
         print(f"S5E{ep}: EXC {str(e)[:60]}", flush=True)
-    _t.sleep(6)
+    _t.sleep(12)
 print("[done]", flush=True)
