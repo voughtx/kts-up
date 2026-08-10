@@ -163,12 +163,19 @@ def ep_height(eid):
         blobs.append(b3)
         p = f"/tmp/q_seg_{i}.bin"
         open(p, "wb").write(b3)
-        # probe single
-        pr = subprocess.run(f"ffprobe -v error -select_streams v:0 -show_entries stream=height,width -of csv=p=0 {p}",
-                            shell=True, capture_output=True, text=True, timeout=30)
-        h = (pr.stdout or "").strip()
-        if h and h != "N/A":
-            return h, None
+        # probe single — full json, all streams
+        pr = subprocess.run(f"ffprobe -v error -show_streams -show_format -of json {p}",
+                            shell=True, capture_output=True, text=True, timeout=40)
+        try:
+            jj = json.loads(pr.stdout)
+            hs = []
+            for st in (jj.get("streams") or []):
+                if st.get("codec_type") == "video" and st.get("height"):
+                    hs.append(f"{st['width']}x{st['height']}")
+            if hs:
+                return ",".join(sorted(set(hs))), None
+        except Exception:
+            pass
     # try combine init + media (fMP4)
     if len(blobs) >= 2:
         open("/tmp/q_comb.bin", "wb").write(b"".join(blobs))
