@@ -3,6 +3,7 @@
 (relay + direct) -> first-bytes hexdump -> exact ffmpeg remux stderr.
 Diagnostic only — kuch upload nahi karta."""
 import os, sys, json, re, base64, hashlib, subprocess, urllib.request, urllib.parse, time
+subprocess.run("pip install -q pycryptodome", shell=True, check=False)
 from Crypto.Cipher import AES
 
 API = "https://api.kartoons.me/api"
