@@ -41,7 +41,7 @@ async def main():
         print("[!] no client", flush=True)
         return
 
-    mids = {3011: 19, 3012: 20, 3013: 21, 3014: 22, 3015: 23, 3016: 24, 3017: 25}
+    mids = {3014: 22, 3017: 25}
     for mid in sorted(mids):
         ep = mids[mid]
         try:
@@ -54,7 +54,7 @@ async def main():
                 os.remove(p)
             await client.download_media(msg, file=p)
             sz = os.path.getsize(p) if os.path.exists(p) else 0
-            pr = subprocess.run(f"ffprobe -v error -show_streams -of json {p}",
+            pr = subprocess.run(f"ffprobe -v error -show_streams -show_format -of json {p}",
                                 shell=True, capture_output=True, text=True, timeout=60)
             h = None
             try:
@@ -65,7 +65,13 @@ async def main():
                         break
             except Exception:
                 pass
-            print(f"[S5E{ep} mid={mid}] size={sz/1048576:.1f}MB height={h}", flush=True)
+            if not h:
+                with open(p, "rb") as f:
+                    head = f.read(32)
+                print(f"[S5E{ep} mid={mid}] size={sz/1048576:.1f}MB height=None head={head.hex()}", flush=True)
+                print(f"  ffprobe rc={pr.returncode} stdout[:200]={pr.stdout[:200]!r} stderr[:300]={pr.stderr[:300]!r}", flush=True)
+            else:
+                print(f"[S5E{ep} mid={mid}] size={sz/1048576:.1f}MB height={h}", flush=True)
         except Exception as e:
             print(f"[S5E{ep}] EXC {str(e)[:80]}", flush=True)
     await client.disconnect()
