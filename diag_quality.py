@@ -43,6 +43,26 @@ except Exception as e:
 def api(path, hdrs=None, timeout=30):
     h = {"User-Agent": UA, "Accept": "application/json", "Origin": REF.rstrip("/"), "Referer": REF}
     if hdrs: h.update(hdrs)
+    # relay-first (app jaisa) — runner direct IP blocked hain
+    for r2 in RELAYS:
+        try:
+            if r2.get("type") == "prefix":
+                rurl = r2["url"] + API + path
+            else:
+                q = urllib.parse.urlencode([("path", path)] + [(f"h_{k}", v) for k, v in h.items()])
+                rurl = r2["url"] + "?" + q
+            rq = urllib.request.Request(rurl, headers={"X-KTS-Key": RELAY_KEY})
+            with urllib.request.urlopen(rq, timeout=timeout) as resp:
+                b = resp.read().decode("utf-8", "replace")
+            if b[:1] == "{":
+                try:
+                    if json.loads(b).get("error"):
+                        continue
+                except Exception:
+                    pass
+            return 200, b
+        except Exception:
+            continue
     r = urllib.request.Request(API + path, headers=h)
     try:
         with urllib.request.urlopen(r, timeout=timeout) as resp:
@@ -215,5 +235,5 @@ for ep, eid in EIDS.items():
         print(f"S5E{ep}: {'HEIGHT='+h if h else 'ERR '+str(err)}", flush=True)
     except Exception as e:
         print(f"S5E{ep}: EXC {str(e)[:60]}", flush=True)
-    _t.sleep(4)
+    _t.sleep(6)
 print("[done]", flush=True)
