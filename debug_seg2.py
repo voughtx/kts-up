@@ -4,6 +4,7 @@ Runner pe KEY_10 hai to enc2 decrypt + segment download + playlist write + ffmpe
 full stderr ke saath. Diagnostic only."""
 import os, sys, json, re, base64, hashlib, subprocess, urllib.request, urllib.parse, time
 subprocess.run("pip install -q pycryptodome", shell=True, check=False)
+subprocess.run("sudo apt-get install -y -q ffmpeg || true", shell=True, check=False)
 from Crypto.Cipher import AES
 
 API = "https://api.kartoons.me/api"
@@ -153,11 +154,13 @@ print("[*] playlist links:", len(urls), flush=True)
 
 master_text = ""
 for url in urls:
-    st2, b2 = api(url, hdrs={"Accept": "*/*"})
-    if st2 == 200 and "#EXTM3U" in b2:
-        master_text = b2
-        print("[*] master OK len:", len(b2), flush=True)
+    b2 = req_bin(url, headers={"Accept": "*/*"})
+    if b2 and b"#EXTM3U" in b2[:200]:
+        master_text = b2.decode("utf-8", "replace")
+        print("[*] master OK len:", len(master_text), flush=True)
         break
+    else:
+        print("[!] master fail", url[:60], "len:", len(b2), flush=True)
 
 # ---- 2. EXACT _local_convert clone ----
 out_lines = []
