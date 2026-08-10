@@ -174,8 +174,12 @@ def ep_height(eid):
                     hs.append(f"{st['width']}x{st['height']}")
             if hs:
                 return ",".join(sorted(set(hs))), None
-        except Exception:
+        except Exception as ex:
             pass
+        if i == 0:
+            print(f"  [dbg] ffprobe rc={pr.returncode}", flush=True)
+            print(f"  [dbg] stdout[:400]={repr(pr.stdout[:400])}", flush=True)
+            print(f"  [dbg] stderr[:400]={repr(pr.stderr[:400])}", flush=True)
     # try combine init + media (fMP4)
     if len(blobs) >= 2:
         open("/tmp/q_comb.bin", "wb").write(b"".join(blobs))
@@ -201,10 +205,11 @@ EIDS = {
     24: "6849900e6ed2282cba655f3d",
     25: "6849900e6ed2282cba655f3e",
 }
-for ep, eid in EIDS.items():
-    try:
-        h, err = ep_height(eid)
-        print(f"S5E{ep}: {'HEIGHT='+h if h else 'ERR '+str(err)}", flush=True)
-    except Exception as e:
-        print(f"S5E{ep}: EXC {str(e)[:60]}", flush=True)
+# debug: sirf E16, raw ffprobe output
+import traceback
+try:
+    h, err = ep_height("6849900e6ed2282cba655f35")
+    print(f"S5E16: {'HEIGHT='+h if h else 'ERR '+str(err)}", flush=True)
+except Exception as e:
+    print("EXC:", traceback.format_exc()[-800:], flush=True)
 print("[done]", flush=True)
