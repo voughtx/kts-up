@@ -169,9 +169,16 @@ async function ghSaveRunLog(env, w, repo) {
     let log = "";
     for (const j of jd.jobs || []) {
       try {
-        // follow redirects by default = 1 subrequest (50-limit safe)
-        const lr = await fetch(`https://api.github.com/repos/${rp}/actions/jobs/${j.id}/logs`, { headers: hdrs });
-        if (lr.ok) {
+        // manual redirect: blob host ko Authorization mat do (401 deta hai) — UA-only fetch
+        const lr = await fetch(`https://api.github.com/repos/${rp}/actions/jobs/${j.id}/logs`, { headers: hdrs, redirect: "manual" });
+        if (lr.status === 301 || lr.status === 302 || lr.status === 303) {
+          const loc = lr.headers.get("location");
+          if (loc) {
+            const lr2 = await fetch(loc, { headers: { "User-Agent": "kts-worker", "Accept": "text/plain" } });
+            if (lr2.ok) log += (await lr2.text()) + "\n";
+            else console.log("janitor: blob fetch fail", w.id, lr2.status);
+          }
+        } else if (lr.ok) {
           log += (await lr.text()) + "\n";
         } else {
           console.log("janitor: logs fetch fail", w.id, "job", j.id, lr.status);
