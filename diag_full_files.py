@@ -2,6 +2,7 @@
 """diag_full_files.py — E19-25 posted videos download karke ffprobe height.
 Full file download (Telethon) — definitive resolution check."""
 import os, sys, json, asyncio, subprocess, urllib.request
+subprocess.run("sudo apt-get install -y -q ffmpeg || true", shell=True, check=False)
 
 SB_URL = os.environ.get("KEY_20", "").strip().rstrip("/")
 SB_KEY = os.environ.get("KEY_21", "").strip()
@@ -41,7 +42,7 @@ async def main():
         print("[!] no client", flush=True)
         return
 
-    mids = {3014: 22, 3017: 25}
+    mids = {3011: 19, 3012: 20, 3013: 21, 3014: 22, 3015: 23, 3016: 24, 3017: 25}
     for mid in sorted(mids):
         ep = mids[mid]
         try:
