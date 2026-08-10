@@ -3,6 +3,7 @@
 Har episode ka pehla segment download + ffprobe height. Diagnostic only."""
 import os, sys, json, re, base64, hashlib, subprocess, urllib.request, urllib.parse
 subprocess.run("pip install -q pycryptodome", shell=True, check=False)
+subprocess.run("sudo apt-get install -y -q ffmpeg || true", shell=True, check=False)
 from Crypto.Cipher import AES
 
 API = "https://api.kartoons.me/api"
@@ -205,11 +206,10 @@ EIDS = {
     24: "6849900e6ed2282cba655f3d",
     25: "6849900e6ed2282cba655f3e",
 }
-# debug: sirf E16, raw ffprobe output
-import traceback
-try:
-    h, err = ep_height("6849900e6ed2282cba655f35")
-    print(f"S5E16: {'HEIGHT='+h if h else 'ERR '+str(err)}", flush=True)
-except Exception as e:
-    print("EXC:", traceback.format_exc()[-800:], flush=True)
+for ep, eid in EIDS.items():
+    try:
+        h, err = ep_height(eid)
+        print(f"S5E{ep}: {'HEIGHT='+h if h else 'ERR '+str(err)}", flush=True)
+    except Exception as e:
+        print(f"S5E{ep}: EXC {str(e)[:60]}", flush=True)
 print("[done]", flush=True)
