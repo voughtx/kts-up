@@ -87,14 +87,18 @@ async def main():
             cap = msg.message or ""
             # dims from video/document
             w = h = None
+            print(f"    [dbg] media_type={type(msg.media).__name__} video={msg.video is not None} doc={msg.document is not None}", flush=True)
             if msg.video:
                 w, h = msg.video.w, msg.video.h
-            elif msg.document:
+                print(f"    [dbg] video obj: w={w} h={h}", flush=True)
+            if msg.document:
                 from telethon.tl.types import DocumentAttributeVideo
+                attrs = []
                 for a in msg.document.attributes:
+                    attrs.append(type(a).__name__)
                     if isinstance(a, DocumentAttributeVideo):
                         w, h = a.w, a.h
-                        break
+                print(f"    [dbg] doc attrs={attrs} dims={w}x{h}", flush=True)
             label = h_to_label(h)
             print(f"[S5E{ep} mid={mid}] dims={w}x{h} label={label} caption_q={'576p' in cap} caption_head={repr(cap[:60])}", flush=True)
             if label and "576p" in cap and label != "576p":
