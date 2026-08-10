@@ -776,10 +776,10 @@ export default {
       // JANITOR: MULTI-REPO — saare repos ki run history clean (log save -> delete)
       // PER-REPO fair budget: har repo 3 runs/tick (5 repos x 3 = 15, subrequest 50 ke andar)
       try {
-        let budget = 10;
+        let budget = 5;
         let jnTot = { del: 0, saved: 0 };
         for (const rp of repos) {
-          const jn = await ghCleanupRuns(env, rp, Math.min(2, budget));
+          const jn = await ghCleanupRuns(env, rp, Math.min(1, budget));
           jnTot.del += jn.del || 0;
           jnTot.saved += jn.saved || 0;
           budget -= jn.processed || 0;
@@ -803,16 +803,7 @@ export default {
         console.log("cron: janitor err", String(e).slice(0, 80));
       }
 
-      // commits backup + rolling prune (chhota: 20 commits per tick)
-      try {
-        const cs = await ghSaveCommits(env);
-        const pl = await sbPruneCount(env, "log_", 500);
-        const pc = await sbPruneCount(env, "commit_", 500);
-        const ps = await sbPruneSize(env, 10 * 1024 * 1024);
-        if (cs > 0 || pl > 0 || pc > 0 || ps > 0) console.log("cron: backup commits=" + cs + " pruneLogs=" + pl + " pruneCommits=" + pc + " pruneSize=" + ps);
-      } catch (e) {
-        console.log("cron: backup err", String(e).slice(0, 80));
-      }
+
     } catch (e) {
       console.log("cron error:", String(e));
     }
