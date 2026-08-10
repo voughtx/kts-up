@@ -101,7 +101,11 @@ async def main():
                     p = f"/tmp/probe_{mid}.bin"
                     if os.path.exists(p):
                         os.remove(p)
-                    await client.download_file(msg.document, file=p, part=0, part_size=4*1024*1024)
+                    with open(p, "wb") as f:
+                        async for chunk in client.iter_download(msg.document, offset=0, stride=1024*1024):
+                            f.write(chunk)
+                            if f.tell() >= 4*1024*1024:
+                                break
                     if os.path.exists(p) and os.path.getsize(p) > 0:
                         pr = subprocess.run(
                             f"ffprobe -v error -show_streams -of json {p}",
