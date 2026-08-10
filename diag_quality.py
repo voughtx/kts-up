@@ -155,18 +155,30 @@ def ep_height(eid):
             break
     if not segs:
         return None, "no seg"
+    blobs = []
     for i, seg in enumerate(segs):
         b3 = req_bin(seg)
         if not b3:
             continue
+        blobs.append(b3)
         p = f"/tmp/q_seg_{i}.bin"
         open(p, "wb").write(b3)
+        # probe single
         pr = subprocess.run(f"ffprobe -v error -select_streams v:0 -show_entries stream=height,width -of csv=p=0 {p}",
                             shell=True, capture_output=True, text=True, timeout=30)
         h = (pr.stdout or "").strip()
         if h and h != "N/A":
             return h, None
-    return None, f"no probe ({len(segs)} segs tried)"
+    # try combine init + media (fMP4)
+    if len(blobs) >= 2:
+        open("/tmp/q_comb.bin", "wb").write(b"".join(blobs))
+        pr = subprocess.run(f"ffprobe -v error -select_streams v:0 -show_entries stream=height,width -of csv=p=0 /tmp/q_comb.bin",
+                            shell=True, capture_output=True, text=True, timeout=30)
+        h = (pr.stdout or "").strip()
+        if h and h != "N/A":
+            return h, None
+    first = blobs[0][:16] if blobs else b""
+    return None, f"no probe ({len(segs)} segs, first={first.hex()})"
 
 # S5E15..E25 eids (Miraculous 68498e886ed2282cba655f24 → S5 ep eids)
 EIDS = {
