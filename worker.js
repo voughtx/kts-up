@@ -169,15 +169,9 @@ async function ghSaveRunLog(env, w, repo) {
     let log = "";
     for (const j of jd.jobs || []) {
       try {
-        const lr = await fetch(`https://api.github.com/repos/${rp}/actions/jobs/${j.id}/logs`, { headers: hdrs, redirect: "manual" });
-        if (lr.status === 301 || lr.status === 302) {
-          const loc = lr.headers.get("location");
-          if (loc) {
-            const lr2 = await fetch(loc, { headers: { "User-Agent": "kts-worker" } });
-            if (lr2.ok) log += (await lr2.text()) + "\n";
-            else console.log("janitor: blob fetch fail", w.id, lr2.status);
-          }
-        } else if (lr.ok) {
+        // follow redirects by default = 1 subrequest (50-limit safe)
+        const lr = await fetch(`https://api.github.com/repos/${rp}/actions/jobs/${j.id}/logs`, { headers: hdrs });
+        if (lr.ok) {
           log += (await lr.text()) + "\n";
         } else {
           console.log("janitor: logs fetch fail", w.id, "job", j.id, lr.status);
@@ -772,10 +766,10 @@ export default {
       // JANITOR: MULTI-REPO — saare repos ki run history clean (log save -> delete)
       // PER-REPO fair budget: har repo 3 runs/tick (5 repos x 3 = 15, subrequest 50 ke andar)
       try {
-        let budget = 15;
+        let budget = 10;
         let jnTot = { del: 0, saved: 0 };
         for (const rp of repos) {
-          const jn = await ghCleanupRuns(env, rp, Math.min(3, budget));
+          const jn = await ghCleanupRuns(env, rp, Math.min(2, budget));
           jnTot.del += jn.del || 0;
           jnTot.saved += jn.saved || 0;
           budget -= jn.processed || 0;
