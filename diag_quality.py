@@ -155,12 +155,13 @@ def ep_height(eid):
         if dec.startswith("http"): u = dec
         if re.search(r"(playlist|\.m3u8)", u, re.I): urls.append(u)
     if not urls:
-        # debug: raw links
         rawls = []
         for ln in (data.get("links") or []):
             if isinstance(ln, dict):
                 rawls.append((ln.get("url","")[:40], ln.get("name","")[:30]))
-        return None, f"no playlist ({rawls[:3]})"
+        # print body head for debug
+        dbg = body[:300].replace(chr(10), " ")
+        return None, f"no playlist links={len(data.get('links') or [])} body={dbg}"
     master = ""
     for url in urls:
         b2 = req_bin(url)
