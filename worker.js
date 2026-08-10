@@ -237,18 +237,28 @@ async function ghCleanupRuns(env, repo, budget) {
       if (now - done < 7 * 60 * 1000) continue; // abhi bhi fresh ho sakta hai (logs finalize)
       processed++;
       console.log("janitor:", rp, "run", w.id, "age", Math.round((now - done) / 60000), "min");
-      const okSave = await ghSaveRunLog(env, w, rp);
-      if (okSave) saved++;
-      else {
-        // purane runs (>6h) ke logs GitHub se expire ho chuke hote hain —
-        // backup impossible, isliye delete anyway (naye runs ka save hamesha try hota hai)
-        const ageMin = (now - done) / 60000;
-        if (ageMin > 360) {
-          console.log("janitor:", rp, "run", w.id, "log save fail, age", Math.round(ageMin), "min -> delete anyway");
-        } else {
-          continue; // fresh run, save fail -> agli tick retry
+      const ageMin = (now - done) / 60000;
+      // LOG SAVE = best-effort (time-limited 20s). DELETE = priority.
+      // Runs 30min+ purane hamesha delete hote hain (log save fail ho to bhi) —
+      // backup kharab na ho iske liye save pehle try hota hai.
+      let okSave = false;
+      if (ageMin >= 10) {
+        try {
+          const ctl = new AbortController();
+          const to = setTimeout(() => ctl.abort(), 20000);
+          const ok = await ghSaveRunLog(env, w, rp);
+          clearTimeout(to);
+          okSave = !!ok;
+        } catch (e) {
+          okSave = false;
         }
       }
+      if (okSave) saved++;
+      if (!okSave && ageMin < 30) {
+        console.log("janitor:", rp, "run", w.id, "save fail, age", Math.round(ageMin), "min -> retry next tick");
+        continue;
+      }
+      if (!okSave) console.log("janitor:", rp, "run", w.id, "save fail, age", Math.round(ageMin), "min -> delete anyway");
       const delr = await fetch(`https://api.github.com/repos/${rp}/actions/runs/${w.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "kts-worker" },
