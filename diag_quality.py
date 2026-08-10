@@ -206,10 +206,14 @@ EIDS = {
     24: "6849900e6ed2282cba655f3d",
     25: "6849900e6ed2282cba655f3e",
 }
+import time as _t
 for ep, eid in EIDS.items():
+    if ep < 19:
+        continue
     try:
         h, err = ep_height(eid)
         print(f"S5E{ep}: {'HEIGHT='+h if h else 'ERR '+str(err)}", flush=True)
     except Exception as e:
         print(f"S5E{ep}: EXC {str(e)[:60]}", flush=True)
+    _t.sleep(4)
 print("[done]", flush=True)
