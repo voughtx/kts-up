@@ -16,6 +16,7 @@ import os, sys, re, json, time, base64, hashlib, urllib.request as Q, urllib.par
 def p(*a): print(*a, flush=True)
 
 _A   = os.environ.get("KEY_8","")            # kartoons api base
+_K   = os.environ.get("KEY_9","")            # CBC key material
 _G   = os.environ.get("KEY_10","")           # GCM key material
 _TB  = os.environ.get("KEY_11","").rstrip("/")  # katfile base
 _TT  = os.environ.get("KEY_12","")           # katfile api token
@@ -47,6 +48,32 @@ def dec_gcm(enc):
         except Exception:
             pass
     return enc
+
+def dec_cbc(url):
+    # app ke _dec_cbc L496 jaisa: b64url -> iv(16)+ct, AES-256-CBC, pkcs7 strip
+    try:
+        raw = b64u(url); iv, ct = raw[:16], raw[16:]
+        pt = AES.new(_K.encode()[:32], AES.MODE_CBC, iv).decrypt(ct)
+        pad = pt[-1]
+        if 1 <= pad <= 16 and pt[-pad:] == bytes([pad])*pad:
+            pt = pt[:-pad]
+        return pt.decode("utf-8","replace")
+    except Exception:
+        return url
+
+def dec_url(url):
+    # app ke _dec_url L523 jaisa: enc2:->GCM, http->as-is, b64-ish->CBC
+    if not url:
+        return url
+    if url.startswith("enc2:"):
+        return dec_gcm(url)
+    if url.startswith("http"):
+        return url
+    if re.fullmatch(r"[A-Za-z0-9_\-+/=]+", url or ""):
+        d = dec_cbc(url)
+        if d != url and d.startswith("http"):
+            return d
+    return url
 
 def pow_solve(nonce, bits):
     zeros = "0"*(bits//4); extra = bits % 4; s = 0
@@ -87,7 +114,10 @@ def get_playlist():
         p("[x] koi link nahi"); sys.exit(1)
 
     raw = links[0].get("url") or ""
-    purl = dec_gcm(raw) if raw.startswith("enc2:") else raw
+    # FIX: link URL enc2: nahi, CBC-b64 bhi ho sakta hai -> dec_url() sab handle karta hai
+    purl = dec_url(raw)
+    if not purl.startswith("http"):
+        p(f"[x] playlist url decrypt nahi hui (prefix={purl[:12]!r}) — KEY_9/KEY_10 check karo"); sys.exit(1)
     p(f"[ok] playlist url: {purl[:60]}...")
 
     code, body = http(purl, hdr={"User-Agent":_UA, "Referer":_REF})
