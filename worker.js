@@ -97,6 +97,24 @@ async function sbDeleteRow(env, id) {
   } catch (e) { return false; }
 }
 
+async function sbDeleteRows(env, ids) {
+  // BULK delete — id=in.(a,b,c) ek request mein (subrequest limit save)
+  if (!ids || !ids.length) return 0;
+  let del = 0;
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80);
+    const q = chunk.map((x) => encodeURIComponent(x)).join(",");
+    try {
+      const r = await fetch(`${env.SB_URL}/rest/v1/progress?id=in.(${q})`, {
+        method: "DELETE",
+        headers: { apikey: env.SB_KEY, Authorization: `Bearer ${env.SB_KEY}`, "User-Agent": "kts-worker" },
+      });
+      if (r.ok) del += chunk.length;
+    } catch (e) {}
+  }
+  return del;
+}
+
 async function ghSaveCommits(env, repo) {
   const rp = repo || env.GH_REPO || "";
   if (!env.GH_TOKEN || !rp) return 0;
@@ -125,20 +143,20 @@ async function ghSaveCommits(env, repo) {
 }
 
 async function sbPruneCount(env, prefix, max) {
-  // FIX(2026-08-11): supabase REST max limit = 1000 (2000 -> 400 error, prune kabhi chalta nahi tha).
-  // Ab paginated fetch: 1000/req, loop jab tak <= max ya 6 passes (6000 rows scan).
+  // FIX(2026-08-11): supabase REST max limit = 1000 (2000 -> 400 error).
+  // FIX(2026-08-11b): BULK delete (id=in.()) — pehle 1-by-1 delete 500 subrequests leta tha
+  // (CF free limit 50) isliye prune kabhi complete nahi hota tha. Ab ~6 requests total.
   try {
     let del = 0;
-    for (let pass = 0; pass < 6; pass++) {
+    for (let pass = 0; pass < 8; pass++) {
       const docs = await sbGet(env, "progress", `select=id,state&id=like.${prefix}%25&limit=1000&offset=0`);
       if (!docs || !docs.length) break;
       docs.sort((a, b) => ((a.state && a.state.at) || 0) - ((b.state && b.state.at) || 0));
-      let removed = 0;
-      while (docs.length > max) {
-        const old = docs.shift();
-        if (await sbDeleteRow(env, old.id)) { del++; removed++; }
-      }
-      if (!removed) break; // is pass kuch delete nahi hua -> backlog clear
+      const excess = docs.slice(0, docs.length - max);
+      if (!excess.length) break;
+      const removed = await sbDeleteRows(env, excess.map((d) => d.id));
+      del += removed;
+      if (removed < excess.length) break; // kuch fail -> agli tick pe
     }
     return del;
   } catch (e) { return 0; }
