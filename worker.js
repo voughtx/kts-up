@@ -441,6 +441,36 @@ export default {
       return json({ total, totalSize, byShow, thumb, today, last24, allTime: true });
     }
 
+    if (url.pathname === "/api/queue") {
+      // LIVE SHOW QUEUE — ordered list from Supabase `showlist` doc + real counts
+      const sl = await sbGet(env, "progress", "select=state&id=eq.showlist&limit=1");
+      const shows = (sl && sl[0] && sl[0].state && Array.isArray(sl[0].state.shows)) ? sl[0].state.shows : [];
+      const docs = [];
+      let off = 0, fail = false;
+      while (off < 20000) {
+        const chunk = await sbGet(env, "episodes", `select=show&limit=1000&offset=${off}`);
+        if (chunk === null) { fail = true; break; }
+        if (!chunk.length) break;
+        docs.push(...chunk);
+        if (chunk.length < 1000) break;
+        off += 1000;
+      }
+      if (fail && !docs.length) return json({ error: "sb not configured" }, 500);
+      const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const per = {};
+      for (const d of docs) {
+        const k = norm(d.show);
+        if (k) per[k] = (per[k] || 0) + 1;
+      }
+      const out = shows.map((s) => ({
+        id: s.id || "",
+        name: s.name || "?",
+        total: parseInt(s.total, 10) || 0,
+        done: per[norm(s.name)] || 0,
+      }));
+      return json({ shows: out, updated: Math.floor(Date.now() / 1000), allTime: true });
+    }
+
     if (url.pathname === "/api/progress") {
       const docs = await sbGet(env, "progress", "select=state&id=eq.main&limit=1");
       return json((docs && docs[0] && docs[0].state) || {});
