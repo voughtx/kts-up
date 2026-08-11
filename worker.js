@@ -719,12 +719,24 @@ export default {
       return json((row && row.state) || { run_id: id, result: "?", log: "(not found)" });
     }
 
-    if (url.pathname === "/api/kproxy") {
+    if (url.pathname === "/api/kproxy" || url.pathname === "/relay") {
       // kartoons.me API proxy — GH runner IPs blocked (403 Are you a human?)
       // CF edge se fetch karta hai (CF-to-CF challenge bypass)
-      if (!checkAdmin(request, env)) return json({ error: "unauthorized" }, 401);
+      // AUTH: admin key (dashboard) YA X-KTS-Key relay key (app relay chain)
+      const rk = request.headers.get("X-KTS-Key") || "";
+      if (!checkAdmin(request, env) && rk !== "ktsrelay2026")
+        return json({ error: "unauthorized" }, 401);
       const path = (url.searchParams.get("path") || "").trim();
-      if (!path.startsWith("/")) return json({ error: "bad path" }, 400);
+      // relative path -> kartoons API; absolute URL -> direct fetch (binary segments bhi)
+      let target;
+      if (path.startsWith("http://") || path.startsWith("https://")) {
+        target = path;
+      } else if (path.startsWith("/")) {
+        const apiBase = env.KAPI || "https://api.kartoons.me/api";
+        target = apiBase + path;
+      } else {
+        return json({ error: "bad path" }, 400);
+      }
       const apiBase = env.KAPI || "https://api.kartoons.me/api";
       const fwd = ["X-Challenge-Token", "X-Pow-Nonce", "X-Pow-Solution", "X-Challenge-Retry", "Authorization", "Referer", "Origin"];
       const hdrs = {
@@ -737,13 +749,17 @@ export default {
         const v = request.headers.get(h);
         if (v) hdrs[h] = v;
       }
+      // app relay format: h_<Header> query params
+      for (const [k, v] of url.searchParams.entries()) {
+        if (k.startsWith("h_") && v) hdrs[k.slice(2)] = v;
+      }
       let body = null;
       if (request.method === "POST") {
         try { body = await request.text(); } catch (e) { body = null; }
         if (body) hdrs["Content-Type"] = "application/json";
       }
       try {
-        const r = await fetch(apiBase + path, {
+        const r = await fetch(target, {
           method: request.method,
           headers: hdrs,
           body: body || undefined,
