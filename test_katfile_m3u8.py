@@ -65,17 +65,23 @@ def http(url, data=None, hdr=None, method=None, timeout=60):
 
 # ---------- 1) episode links (X-Challenge-Token + PoW) ----------
 def get_playlist():
-    code, body = http(f"{_A}/challenge/pow?content=episode:{_EID}",
-                      hdr={"User-Agent":_UA, "Referer":_REF, "X-Challenge-Token":_TOK})
+    # base headers app jaise (Origin + Referer zaroori)
+    base = {"User-Agent":_UA, "Accept":"application/json",
+            "Origin":_REF.rstrip("/"), "Referer":_REF}
+
+    code, body = http(f"{_A}/challenge/pow?content=episode:{_EID}", hdr=dict(base))
     d = (json.loads(body).get("data") or {})
     nonce, bits = d.get("nonce"), int(d.get("bits") or 16)
     sol = pow_solve(nonce, bits)
     p(f"[ok] PoW solved (bits={bits})")
 
-    code, body = http(f"{_A}/episodes/{_EID}/links",
-                      hdr={"User-Agent":_UA, "Referer":_REF, "X-Challenge-Token":_TOK,
-                           "X-Pow-Nonce":nonce, "X-Pow-Solution":sol})
-    p(f"[ok] /links HTTP {code}")
+    # FIX: path /shows/episode/<eid>/links hai (mera /episodes/... galat tha -> 403)
+    # FIX: Authorization Bearer + X-Challenge-Retry bhi chahiye, sirf X-Challenge-Token se 403
+    h = dict(base)
+    h.update({"X-Challenge-Token":_TOK, "Authorization":f"Bearer {_TOK}",
+              "X-Challenge-Retry":"true", "X-Pow-Nonce":nonce, "X-Pow-Solution":sol})
+    code, body = http(f"{_A}/shows/episode/{_EID}/links", hdr=h)
+    p(f"[ok] /shows/episode/{_EID}/links HTTP {code}")
     links = (json.loads(body).get("data") or {}).get("links") or []
     if not links:
         p("[x] koi link nahi"); sys.exit(1)
