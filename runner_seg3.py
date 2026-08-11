@@ -85,7 +85,7 @@ def dec_gcm(enc):
             continue
     return ""
 
-EID = "684672cb333e6d02d74c2450"  # Mushoku S1E20
+EID = "684672cb333e6d02d74c2452"  # Mushoku S1E22
 tok = TOKENS[0] if TOKENS else ""
 st, body = relay("/challenge/pow?content=" + urllib.parse.quote("episode:" + EID))
 ch = json.loads(body.decode()).get("data") or {}
