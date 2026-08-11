@@ -28,6 +28,7 @@ jobs:
       - name: katfile decrypted-playlist test
         env:
           KEY_8:  ${{ secrets.KEY_8 }}
+          KEY_9:  ${{ secrets.KEY_9 }}
           KEY_10: ${{ secrets.KEY_10 }}
           KEY_11: ${{ secrets.KEY_11 }}
           KEY_12: ${{ secrets.KEY_12 }}
