@@ -103,7 +103,6 @@ jobs:
           KEY_37: ${{ secrets.KEY_37 }}
           KEY_19: ${{ secrets.KEY_19 }}
           KEY_8: ${{ secrets.KEY_8 }}
-          KEY_10: ${{ secrets.KEY_10 }}
           KEY_20: ${{ secrets.KEY_20 }}
           KEY_21: ${{ secrets.KEY_21 }}
           SHOW_ID: ${{ secrets.SHOW_ID }}
