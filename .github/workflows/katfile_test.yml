@@ -10,8 +10,9 @@ on:
         description: "challengeToken (localStorage se)"
         required: true
 
+# host_raw() repo me tmp/test_playlist.m3u8 PUT karta hai -> write chahiye
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test:
