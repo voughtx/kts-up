@@ -302,6 +302,17 @@ async function ghCleanupRuns(env, repo, budget) {
   return { del, saved, processed };
 }
 
+// FIX(2026-08-11): kartoons CF-worker-IP pe rate-limit (403/429) — 5 repos har run
+// naya runner = local cache empty => poora catalog re-fetch. Worker-side 120s memory
+// cache metadata endpoints (/shows/..., /shows?search=...) — API load 5x+ kam.
+const gCache = new Map();
+function gCacheGet(key) {
+  const e = gCache.get(key);
+  if (!e) return null;
+  if (Date.now() - e.at > 120000) { gCache.delete(key); return null; }
+  return e;
+}
+
 async function tgAlert(env, text) {
   if (!env.BOT_TOKEN || !env.CHAT_ID) return;
   try {
@@ -785,6 +796,18 @@ export default {
         if (body) hdrs["Content-Type"] = "application/json";
       }
       try {
+        // metadata cache (GET, public endpoints, 120s) — kartoons rate-limit fix
+        const isMeta = request.method === "GET" &&
+          !path.includes("/links") && !path.includes("/challenge") &&
+          !path.startsWith("http");
+        let cached = null;
+        if (isMeta) cached = gCacheGet("kapi:" + path);
+        if (cached) {
+          return new Response(cached.buf, {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-KTS-Cache": "HIT" },
+          });
+        }
         const r = await fetch(target, {
           method: request.method,
           headers: hdrs,
@@ -795,6 +818,9 @@ export default {
         // arrayBuffer() raw bytes preserve karta hai; content-type original pass karo.
         const buf = await r.arrayBuffer();
         const ct = r.headers.get("Content-Type") || "application/octet-stream";
+        if (isMeta && r.status === 200) {
+          gCache.set("kapi:" + path, { at: Date.now(), buf });
+        }
         return new Response(buf, {
           status: r.status,
           headers: { "Content-Type": ct, "Access-Control-Allow-Origin": "*" },
