@@ -125,14 +125,20 @@ async function ghSaveCommits(env, repo) {
 }
 
 async function sbPruneCount(env, prefix, max) {
+  // FIX(2026-08-11): supabase REST max limit = 1000 (2000 -> 400 error, prune kabhi chalta nahi tha).
+  // Ab paginated fetch: 1000/req, loop jab tak <= max ya 6 passes (6000 rows scan).
   try {
-    const docs = await sbGet(env, "progress", `select=id,state&id=like.${prefix}%25&limit=2000`);
-    if (!docs) return 0;
-    docs.sort((a, b) => ((a.state && a.state.at) || 0) - ((b.state && b.state.at) || 0));
     let del = 0;
-    while (docs.length > max) {
-      const old = docs.shift();
-      if (await sbDeleteRow(env, old.id)) del++;
+    for (let pass = 0; pass < 6; pass++) {
+      const docs = await sbGet(env, "progress", `select=id,state&id=like.${prefix}%25&limit=1000&offset=0`);
+      if (!docs || !docs.length) break;
+      docs.sort((a, b) => ((a.state && a.state.at) || 0) - ((b.state && b.state.at) || 0));
+      let removed = 0;
+      while (docs.length > max) {
+        const old = docs.shift();
+        if (await sbDeleteRow(env, old.id)) { del++; removed++; }
+      }
+      if (!removed) break; // is pass kuch delete nahi hua -> backlog clear
     }
     return del;
   } catch (e) { return 0; }
@@ -829,10 +835,10 @@ export default {
       // JANITOR: MULTI-REPO — saare repos ki run history clean (log save -> delete)
       // PER-REPO fair budget: har repo 3 runs/tick (5 repos x 3 = 15, subrequest 50 ke andar)
       try {
-        let budget = 5;
+        let budget = 10;
         let jnTot = { del: 0, saved: 0 };
         for (const rp of repos) {
-          const jn = await ghCleanupRuns(env, rp, Math.min(1, budget));
+          const jn = await ghCleanupRuns(env, rp, Math.min(2, budget));
           jnTot.del += jn.del || 0;
           jnTot.saved += jn.saved || 0;
           budget -= jn.processed || 0;
