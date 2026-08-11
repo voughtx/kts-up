@@ -863,7 +863,7 @@ export default {
         if (pl > 0 || pc > 0 || ps > 0)
           console.log("cron: prune logs=" + pl + " commits=" + pc + " size=" + ps);
         // 2) GH run cleanup — log saved-check ke saath (sirf delete purane ke liye)
-        let budget = 8;
+        let budget = 10;
         for (const rp of repos) {
           const jn = await ghCleanupRuns(env, rp, Math.min(2, budget));
           jnTot.del += jn.del || 0;
