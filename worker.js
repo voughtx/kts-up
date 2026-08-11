@@ -303,14 +303,33 @@ async function ghCleanupRuns(env, repo, budget) {
 }
 
 // FIX(2026-08-11): kartoons CF-worker-IP pe rate-limit (403/429) — 5 repos har run
-// naya runner = local cache empty => poora catalog re-fetch. Worker-side 120s memory
-// cache metadata endpoints (/shows/..., /shows?search=...) — API load 5x+ kam.
-const gCache = new Map();
-function gCacheGet(key) {
-  const e = gCache.get(key);
-  if (!e) return null;
-  if (Date.now() - e.at > 120000) { gCache.delete(key); return null; }
-  return e;
+// naya runner = local cache empty => poora catalog re-fetch. Worker-side 120s EDGE
+// cache (caches.default — sab isolates shared) metadata endpoints ke liye.
+// API load 5x+ kam -> rate-limit se bachav.
+async function kCacheGet(key) {
+  try {
+    const cache = caches.default;
+    const req = new Request("https://kapi.internal/" + key);
+    const hit = await cache.match(req);
+    if (!hit) return null;
+    const ts = parseInt(hit.headers.get("X-KTS-Ts") || "0", 10);
+    if (Date.now() - ts > 120000) { await cache.delete(req); return null; }
+    return hit;
+  } catch (e) { return null; }
+}
+async function kCachePut(key, buf, ct) {
+  try {
+    const cache = caches.default;
+    const resp = new Response(buf, {
+      status: 200,
+      headers: {
+        "Content-Type": ct || "application/json",
+        "Cache-Control": "public, max-age=120",
+        "X-KTS-Ts": String(Date.now()),
+      },
+    });
+    await cache.put(new Request("https://kapi.internal/" + key), resp);
+  } catch (e) {}
 }
 
 async function tgAlert(env, text) {
@@ -330,7 +349,7 @@ function checkAdmin(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
@@ -800,13 +819,14 @@ export default {
         const isMeta = request.method === "GET" &&
           !path.includes("/links") && !path.includes("/challenge") &&
           !path.startsWith("http");
-        let cached = null;
-        if (isMeta) cached = gCacheGet("kapi:" + path);
-        if (cached) {
-          return new Response(cached.buf, {
-            status: 200,
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-KTS-Cache": "HIT" },
-          });
+        if (isMeta) {
+          const hit = await kCacheGet("kapi:" + path);
+          if (hit) {
+            const nb = new Response(hit.body, hit);
+            nb.headers.set("Access-Control-Allow-Origin", "*");
+            nb.headers.set("X-KTS-Cache", "HIT");
+            return nb;
+          }
         }
         const r = await fetch(target, {
           method: request.method,
@@ -819,7 +839,7 @@ export default {
         const buf = await r.arrayBuffer();
         const ct = r.headers.get("Content-Type") || "application/octet-stream";
         if (isMeta && r.status === 200) {
-          gCache.set("kapi:" + path, { at: Date.now(), buf });
+          ctx.waitUntil(kCachePut("kapi:" + path, buf, ct));
         }
         return new Response(buf, {
           status: r.status,
