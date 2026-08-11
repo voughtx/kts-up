@@ -8,14 +8,14 @@ client = MongoClient(uri, serverSelectionTimeoutMS=15000)
 db = client["kts"]
 
 targets = [
-    "684672cb333e6d02d74c2450",  # S1E20
-    "684672cb333e6d02d74c2451",  # S1E21
-    "684672cb333e6d02d74c2452",  # S1E22
-    "684672cb333e6d02d74c2453",  # S1E23
+    "684672cb333e6d02d74cfea8",  # S1E20 (74f8fea8)
+    "684672cb333e6d02d74cfea9",  # S1E21
+    "684672cb333e6d02d74cfeaa",  # S1E22
+    "684672cb333e6d02d74cfeab",  # S1E23
 ]
 print("=== Mongo episodes records (S1E20-23) ===", flush=True)
 for eid in targets:
-    rec = db.episodes.find_one({"_id": eid})
+    rec = db.episodes.find_one({"_id": {"$regex": ".*"+eid+"$"}})
     if rec:
         print(f"  {eid[-8:]}: {json.dumps({k: rec.get(k) for k in ['show','season','episode','status','fid','mid','at']}, default=str)[:200]}", flush=True)
     else:
@@ -23,7 +23,7 @@ for eid in targets:
 
 print("\n=== claims ===", flush=True)
 for eid in targets:
-    c = db.claims.find_one({"_id": eid})
+    c = db.claims.find_one({"_id": {"$regex": ".*"+eid+"$"}})
     print(f"  {eid[-8:]}: {'claimed at '+str(c.get('at'))+' age '+str(int(time.time()-c.get('at',0)))+'s' if c else 'free'}", flush=True)
 
 print("\n=== postctl ===", flush=True)
@@ -35,8 +35,8 @@ print(" ", db.episodes.count_documents({}), flush=True)
 
 # S1E24-27 (agar exist karein) aur S2E1-5
 print("\n=== S2E1-5 in mongo? ===", flush=True)
-for eid in ["684672cb333e6d02d74c2454","684672cb333e6d02d74c2455","684672cb333e6d02d74c2456","684672cb333e6d02d74c2457","684672cb333e6d02d74c2458"]:
-    rec = db.episodes.find_one({"_id": eid})
+for eid in ["9947483c","9947483d","9947483e","9947483f","99474840"]:
+    rec = db.episodes.find_one({"_id": {"$regex": ".*"+eid+"$"}})
     print(f"  {eid[-8:]}: {'DONE' if rec else 'no'}", flush=True)
 
 # kya S1E20-23 ka mid record hai?
