@@ -145,20 +145,16 @@ async function ghSaveCommits(env, repo) {
 async function sbPruneCount(env, prefix, max) {
   // FIX(2026-08-11): supabase REST max limit = 1000 (2000 -> 400 error).
   // FIX(2026-08-11b): BULK delete (id=in.()) — pehle 1-by-1 delete 500 subrequests leta tha
-  // (CF free limit 50) isliye prune kabhi complete nahi hota tha. Ab ~6 requests total.
+  // (CF free limit 50) isliye prune kabhi complete nahi hota tha.
+  // FIX(2026-08-11c): SINGLE PASS — har tick pe 1 fetch + ~7 bulk delete (limit 50 ke andar).
+  // Har tick ~500 purane delete -> backlog dheere-dheere clear.
   try {
-    let del = 0;
-    for (let pass = 0; pass < 8; pass++) {
-      const docs = await sbGet(env, "progress", `select=id,state&id=like.${prefix}%25&limit=1000&offset=0`);
-      if (!docs || !docs.length) break;
-      docs.sort((a, b) => ((a.state && a.state.at) || 0) - ((b.state && b.state.at) || 0));
-      const excess = docs.slice(0, docs.length - max);
-      if (!excess.length) break;
-      const removed = await sbDeleteRows(env, excess.map((d) => d.id));
-      del += removed;
-      if (removed < excess.length) break; // kuch fail -> agli tick pe
-    }
-    return del;
+    const docs = await sbGet(env, "progress", `select=id,state&id=like.${prefix}%25&limit=1000&offset=0`);
+    if (!docs || !docs.length) return 0;
+    docs.sort((a, b) => ((a.state && a.state.at) || 0) - ((b.state && b.state.at) || 0));
+    const excess = docs.slice(0, docs.length - max);
+    if (!excess.length) return 0;
+    return await sbDeleteRows(env, excess.map((d) => d.id));
   } catch (e) { return 0; }
 }
 
@@ -274,12 +270,18 @@ async function ghCleanupRuns(env, repo, budget) {
       // backup kharab na ho iske liye save pehle try hota hai.
       let okSave = false;
       if (ageMin >= 10) {
+        // FIX(2026-08-11): log pehle se saved hai to fetch+save skip (subrequest budget bachao)
         try {
-          const ctl = new AbortController();
-          const to = setTimeout(() => ctl.abort(), 20000);
-          const ok = await ghSaveRunLog(env, w, rp);
-          clearTimeout(to);
-          okSave = !!ok;
+          const existing = await sbGetRow(env, "log_" + w.id);
+          if (existing) {
+            okSave = true;
+          } else {
+            const ctl = new AbortController();
+            const to = setTimeout(() => ctl.abort(), 20000);
+            const ok = await ghSaveRunLog(env, w, rp);
+            clearTimeout(to);
+            okSave = !!ok;
+          }
         } catch (e) {
           okSave = false;
         }
@@ -850,11 +852,18 @@ export default {
         }
       }
 
-      // JANITOR: MULTI-REPO — saare repos ki run history clean (log save -> delete)
-      // PER-REPO fair budget: har repo 3 runs/tick (5 repos x 3 = 15, subrequest 50 ke andar)
+      // JANITOR: PRUNE PEHLE (fresh subrequest budget — CF free limit 50), phir GH cleanup.
+      // Bulk delete ~8 subrequests, cleanup check-first ~2/run (saved logs skip fetch).
       try {
-        let budget = 10;
         let jnTot = { del: 0, saved: 0 };
+        // 1) rolling prune (log_ -> 500, commit_ -> 300, size cap)
+        const pl = await sbPruneCount(env, "log_", 500);
+        const pc = await sbPruneCount(env, "commit_", 300);
+        const ps = await sbPruneSize(env);
+        if (pl > 0 || pc > 0 || ps > 0)
+          console.log("cron: prune logs=" + pl + " commits=" + pc + " size=" + ps);
+        // 2) GH run cleanup — log saved-check ke saath (sirf delete purane ke liye)
+        let budget = 8;
         for (const rp of repos) {
           const jn = await ghCleanupRuns(env, rp, Math.min(2, budget));
           jnTot.del += jn.del || 0;
@@ -863,15 +872,11 @@ export default {
           if (budget <= 0) break;
         }
         console.log("cron: janitor ->", JSON.stringify(jnTot));
-        // commits backup + rolling prune (har repo ke liye)
+        // 3) commits backup (last — sabse kam priority)
         for (const rp of repos) {
           try {
             const cs = await ghSaveCommits(env, rp);
-            const pl = await sbPruneCount(env, "log_", 500);
-            const pc = await sbPruneCount(env, "commit_", 300);
-            const ps = await sbPruneSize(env);
-            if (cs > 0 || pl > 0 || pc > 0 || ps > 0)
-              console.log("cron:", rp, "backup commits=" + cs + " pruneLogs=" + pl + " pruneCommits=" + pc + " pruneSize=" + ps);
+            if (cs > 0) console.log("cron:", rp, "backup commits=" + cs);
           } catch (e2) {
             console.log("cron: commit backup err", String(e2).slice(0, 60));
           }
