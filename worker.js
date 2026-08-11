@@ -790,10 +790,14 @@ export default {
           headers: hdrs,
           body: body || undefined,
         });
-        const txt = await r.text();
-        return new Response(txt, {
+        // FIX(2026-08-11): binary-safe — r.text() bytes ko UTF-8 mein corrupt kar deta tha
+        // (MPEG-TS segments -> "Invalid data found when processing input").
+        // arrayBuffer() raw bytes preserve karta hai; content-type original pass karo.
+        const buf = await r.arrayBuffer();
+        const ct = r.headers.get("Content-Type") || "application/octet-stream";
+        return new Response(buf, {
           status: r.status,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          headers: { "Content-Type": ct, "Access-Control-Allow-Origin": "*" },
         });
       } catch (e) {
         return json({ error: "proxy fetch fail: " + String(e).slice(0, 120) }, 502);
