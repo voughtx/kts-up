@@ -21,7 +21,8 @@ def relay(path, hdrs=None):
     h = {"User-Agent": UA, "Accept": "application/json", "Origin": "https://kartoons.me/", "Referer": "https://kartoons.me/"}
     if hdrs: h.update(hdrs)
     q = urllib.parse.urlencode([("path", path)] + [(f"h_{k}", v) for k, v in h.items()])
-    req = urllib.request.Request(R + "?" + q, headers={"X-KTS-Key": "ktsrelay2026"})
+    # UA actual REQUEST headers mein bhi (CF 1010 bypass) — app jaisa
+    req = urllib.request.Request(R + "?" + q, headers={"X-KTS-Key": "ktsrelay2026", "User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.status, resp.read().decode("utf-8", "replace")
