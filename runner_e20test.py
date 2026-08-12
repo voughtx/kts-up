@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""runner_e20test.py — E20 master 5x fetch (alag CDN) + segment direct try har ek se."""
+import urllib.request, urllib.parse, hashlib, json, re, base64, subprocess, os, sys, time
+subprocess.run("pip install -q pycryptodome", shell=True, check=False)
+from Crypto.Cipher import AES
+
+API = "https://api.kartoons.me/api"
+REF = "https://kartoons.me/"
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+SB_URL = os.environ.get("KEY_20", "").strip().rstrip("/")
+SB_KEY = os.environ.get("KEY_21", "").strip()
+GCM = os.environ.get("KEY_10", "").strip()
+KEY9 = "bca9e0df1a5abb32906ca3f63ac04cef"
+R = "https://kts-url.gobinog.workers.dev/relay"
+RELAY_KEY = "ktsrelay2026"
+print("[*] KEY_10 len:", len(GCM), flush=True)
+
+# naya token pool se
+TOKENS = []
+try:
+    req = urllib.request.Request(f"{SB_URL}/rest/v1/progress?select=state&id=eq.tk_voughtx_kts-up&limit=1",
+        headers={"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        arr = json.loads(r.read().decode())
+    TOKENS = ((arr[0].get("state") or {}).get("tokens")) or []
+    print("[ok] pool tokens:", len(TOKENS), flush=True)
+except Exception as e:
+    print("[!] pool fail:", str(e)[:60], flush=True)
+
+def get(url, hdrs=None, timeout=30):
+    h = {"User-Agent": UA, "Accept": "*/*", "Origin": REF.rstrip("/"), "Referer": REF}
+    if hdrs: h.update(hdrs)
+    rq = urllib.request.Request(url, headers=h)
+    try:
+        with urllib.request.urlopen(rq, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+    except Exception as e:
+        return 0, str(e).encode()
+
+def solve_pow(nonce, bits):
+    z = "0" * (bits // 4); extra = bits % 4; s = 0
+    while True:
+        hh = hashlib.sha256(f"{nonce}:{s}".encode()).hexdigest()
+        if hh.startswith(z):
+            if extra:
+                if int(hh[len(z)], 16) < (1 << (4 - extra)): return str(s)
+            else: return str(s)
+        s += 1
+
+def b64u(s):
+    b = s.replace("-", "+").replace("_", "/"); b += "=" * ((4 - len(b) % 4) % 4)
+    return base64.b64decode(b)
+
+def dec_cbc(url):
+    raw = b64u(url); iv, ct = raw[:16], raw[16:]
+    c = AES.new(KEY9.encode()[:32], AES.MODE_CBC, iv)
+    pt = c.decrypt(ct); pad = pt[-1]
+    if 1 <= pad <= 16 and pt[-pad:] == bytes([pad]) * pad: pt = pt[:-pad]
+    return pt.decode("utf-8", "replace")
+
+def dec_gcm(enc):
+    s = enc[5:] if enc.startswith("enc2:") else enc
+    raw = b64u(s); iv, body = raw[:12], raw[12:]
+    key = hashlib.sha256(GCM.encode()).digest()
+    ct, tag = body[:-16], body[-16:]
+    for nv in (iv, bytes(12)):
+        try:
+            c = AES.new(key, AES.MODE_GCM, nonce=nv)
+            return c.decrypt_and_verify(ct, tag).decode("utf-8", "replace")
+        except Exception:
+            continue
+    return ""
+
+EID = "684672cb333e6d02d74c2450"  # E20
+tok = TOKENS[0] if TOKENS else ""
+st, body = get(API + "/challenge/pow?content=" + urllib.parse.quote("episode:" + EID))
+ch = json.loads(body.decode()).get("data") or {}
+hdrs = {"X-Challenge-Token": tok, "Authorization": f"Bearer {tok}", "X-Challenge-Retry": "true"}
+if ch.get("nonce"):
+    hdrs["X-Pow-Nonce"] = ch["nonce"]
+    hdrs["X-Pow-Solution"] = solve_pow(ch["nonce"], ch.get("bits", 16))
+st2, body2 = get(API + f"/shows/episode/{EID}/links", hdrs)
+print("links:", st2, flush=True)
+data = json.loads(body2.decode()).get("data") or {}
+urls = []
+for ln in (data.get("links") or []):
+    if not isinstance(ln, dict) or not ln.get("url"): continue
+    u = ln["url"]
+    try:
+        dec = dec_cbc(u)
+        if dec.startswith("http"): u = dec
+    except Exception: pass
+    if re.search(r"(playlist|\.m3u8)", u, re.I): urls.append(u)
+print("playlist:", len(urls), flush=True)
+
+# 5x master fetch — alag CDN
+for attempt in range(5):
+    master = b""
+    for u in urls:
+        st3, b3 = get(u)
+        if st3 == 200 and b"#EXTM3U" in b3[:200]:
+            master = b3
+            host = re.search(r"https://([a-z0-9.]+)", u).group(1)
+            break
+    if not master:
+        print(f"attempt {attempt+1}: master fail", flush=True)
+        time.sleep(2)
+        continue
+    # variant decrypt
+    variant = ""
+    for ln in master.decode("utf-8","replace").splitlines():
+        ln2 = ln.strip()
+        if ln2.startswith("enc2:"):
+            variant = dec_gcm(ln2)
+            break
+    if not variant:
+        print(f"attempt {attempt+1}: variant decrypt fail", flush=True)
+        continue
+    # media playlist
+    st4, b4 = get(variant)
+    if st4 != 200:
+        print(f"attempt {attempt+1}: media fail {st4}", flush=True)
+        continue
+    media = b4.decode("utf-8","replace")
+    segs = []
+    for ln in media.splitlines():
+        ln2 = ln.strip()
+        if ln2.startswith("enc2:"):
+            d = dec_gcm(ln2)
+            if d.startswith("http"): segs.append(d)
+        elif ln2.startswith("http") and not ln2.startswith("#"):
+            segs.append(ln2)
+    if not segs:
+        print(f"attempt {attempt+1}: no segs", flush=True)
+        continue
+    # first seg direct + relay
+    t0 = time.time()
+    st5, b5 = get(segs[0])
+    dt = time.time() - t0
+    ok = b5[:2] == b"\x47" and st5 == 200
+    print(f"attempt {attempt+1}: CDN={host} seg_direct={st5} len={len(b5)} mpegts={ok} {dt:.1f}s", flush=True)
+    if not ok:
+        # relay try
+        q = urllib.parse.urlencode([("path", segs[0]), ("h_User-Agent", UA), ("h_Referer", REF)])
+        try:
+            rq = urllib.request.Request(R + "?" + q, headers={"X-KTS-Key": RELAY_KEY, "User-Agent": UA})
+            with urllib.request.urlopen(rq, timeout=40) as resp:
+                b6 = resp.read()
+            print(f"  relay: {resp.status} len={len(b6)} mpegts={b6[:2]==b'\\x47'}", flush=True)
+        except urllib.error.HTTPError as e:
+            print(f"  relay: HTTP {e.code} {e.read()[:60]}", flush=True)
+        except Exception as e:
+            print(f"  relay: {str(e)[:80]}", flush=True)
+    time.sleep(1)
+print("[done]", flush=True)
