@@ -187,7 +187,7 @@ def main():
                                     rq = urllib.request.Request(ru, headers={"X-KTS-Key": RELAY_KEY, "User-Agent": UA})
                                     with urllib.request.urlopen(rq, timeout=25) as resp:
                                         ml = resp.read().decode(errors="replace")
-                                    print("[*] media playlist len:", len(ml), "| extm3u:", ml.startswith("#EXTM3U"), flush=True)
+                                    print("[*] media playlist len:", len(ml), "| extm3u:", ml.startswith("#EXTM3U"), "| head:", repr(ml[:40]), flush=True)
                                     segs = [x.strip() for x in ml.splitlines() if x.strip().startswith("http")]
                                     if not segs:
                                         # relative segs
