@@ -15,7 +15,7 @@ GCM = os.environ.get("KEY_10", "").strip()
 KEY9 = "bca9e0df1a5abb32906ca3f63ac04cef"
 RELAY_KEY = "ktsrelay2026"
 TOKEN = os.environ.get("TOKEN", "").strip()
-SHOW = os.environ.get("SHOW_ID", "68615fe7d437587dc8876773").strip()
+SHOW = "68615fe7d437587dc8876773"
 
 print("[*] KEY_10 len:", len(GCM), flush=True)
 print("[*] token len:", len(TOKEN), flush=True)
