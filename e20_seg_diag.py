@@ -195,8 +195,31 @@ def main():
                                     print("[*] media segs:", len(segs), flush=True)
                                     if segs:
                                         su = segs[0] if segs[0].startswith("http") else urllib.parse.urljoin(mv, segs[0])
-                                        print("[*] trying segment fetch:", su[:60], flush=True)
-                                        b = req_bin(su)
+                                        print("[*] trying segment fetch:", su[:70], flush=True)
+                                        # DIRECT
+                                        try:
+                                            hd={"User-Agent":UA,"Accept":"*/*","Origin":REF.rstrip("/"),"Referer":REF}
+                                            rq=urllib.request.Request(su, headers=hd)
+                                            with urllib.request.urlopen(rq, timeout=30) as resp:
+                                                b=resp.read()
+                                            print("[*] direct seg:", len(b), "bytes, head:", b[:15], flush=True)
+                                        except Exception as e:
+                                            print("[!] direct seg EXC:", str(e)[:50], flush=True)
+                                            b=b""
+                                        # RELAY
+                                        for r2 in RELAYS:
+                                            try:
+                                                hd={"User-Agent":UA,"Accept":"*/*","Origin":REF.rstrip("/"),"Referer":REF}
+                                                ru=r2["url"].rstrip("/")+"?"+urllib.parse.urlencode([("path",su)]+[("h_"+k,v) for k,v in hd.items()])
+                                                rq=urllib.request.Request(ru, headers={"X-KTS-Key":RELAY_KEY,"User-Agent":UA})
+                                                with urllib.request.urlopen(rq, timeout=40) as resp:
+                                                    rb=resp.read()
+                                                print("[*] relay seg:", len(rb), "bytes, head:", rb[:15], flush=True)
+                                                if len(rb) > len(b):
+                                                    b = rb
+                                                break
+                                            except Exception as e:
+                                                print("[!] relay seg EXC:", str(e)[:40], flush=True)
                                         print("[*] segment result:", len(b), "bytes", flush=True)
                                     break
                                 except Exception as e:
