@@ -24,24 +24,24 @@ async def main():
     c = TelegramClient(StringSession(ss), AID, AHASH, connection_retries=2)
     await c.connect()
     ent = await c.get_entity(CH)
-    # iterate from msg 7840 to 7900
-    for mid in range(7840, 7901):
+    out = []
+    for mid in range(7852, 7877):
         try:
             m = await c.get_messages(ent, ids=mid)
             if m is None:
-                print(f"{mid} | (none)", flush=True)
+                out.append(f"=== msg {mid} ===\n(none)")
                 continue
-            cap = (m.message or "")[:42].replace("\n", " ⏎ ")
-            has_photo = bool(getattr(m, "photo", None))
-            has_doc = bool(getattr(m, "document", None))
-            has_video = bool(getattr(m, "video", None))
-            typ = "photo" if has_photo else ("video" if has_video else ("doc" if has_doc else "text"))
-            pin = "PIN" if m.pinned else ""
-            grp = getattr(m, "grouped_id", None)
-            print(f"{mid} | {typ:5} | {pin:3} | grp={str(grp)[:8] if grp else '--'} | {cap!r}", flush=True)
+            cap = (m.message or "")
+            typ = "photo" if getattr(m,"photo",None) else ("video" if getattr(m,"video",None) else ("doc" if getattr(m,"document",None) else "text"))
+            pin = " [PINNED]" if m.pinned else ""
+            out.append(f"=== msg {mid} | {typ}{pin} ===\n{cap}\n")
         except Exception as e:
-            print(f"{mid} | ERR {str(e)[:60]}", flush=True)
-        await asyncio.sleep(0.15)
+            out.append(f"=== msg {mid} | ERR {str(e)[:60]} ===\n")
+        await asyncio.sleep(0.12)
+    # write to workspace file (user reads it — not me)
+    with open("/home/user/captions_7852_7876.txt", "w") as f:
+        f.write("\n".join(out))
+    print("written captions file", flush=True)
     await c.disconnect()
     print("[done]", flush=True)
 
