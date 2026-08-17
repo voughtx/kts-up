@@ -24,8 +24,8 @@ async def main():
     await c.connect()
     ent = await c.get_entity(CH)
     ok=0; fail=0
-    # 7852..7876 — delete (poster + text + eps)
-    for mid in range(7852, 7877):
+    # 7877..7880 — delete (wrong-order re-uploaded eps)
+    for mid in range(7877, 7881):
         try:
             m = await c.get_messages(ent, ids=mid)
             if m is None:
