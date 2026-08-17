@@ -54,9 +54,9 @@ def main():
             time.sleep(0.2)
     print(f"total episode ids fetched: {len(allids)}", flush=True)
 
-    # 2) episodes collection se delete (done_ids source)
+    # 2) episodes collection se delete (done_ids source) — collection me "id" field hai
     if allids:
-        r = db.episodes.delete_many({"_id": {"$in": allids}})
+        r = db.episodes.delete_many({"id": {"$in": allids}})
         print(f"mongo episodes deleted: {r.deleted_count}", flush=True)
 
     # 3) show_posters delete
