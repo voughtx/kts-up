@@ -25,7 +25,8 @@ def sb_get(qs):
         return json.loads(r.read().decode())
 
 async def main():
-    state = sb_get("select=state&id=eq.bot_sessions&limit=1")
+    docs = sb_get("select=state&id=eq.bot_sessions&limit=1")
+    state = (docs[0].get("state") or {}) if docs else {}
     bots = {k: v for k, v in state.items() if isinstance(v, list) and len(v) >= 2}
     if not bots:
         print("no bot sessions", flush=True)
