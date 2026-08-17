@@ -8,7 +8,8 @@ Position-only output. Kabhi titles/captions print nahi.
 import os, sys, asyncio, json, time, urllib.request
 
 # ---------- env ----------
-SB = os.environ.get("KEY_21", "").strip()
+SB = os.environ.get("KEY_20", "").strip().rstrip("/")  # Supabase URL
+SBKEY = os.environ.get("KEY_21", "").strip()           # Supabase secret key
 CH = int(os.environ.get("KEY_2", "0").strip())
 AID = int(os.environ.get("KEY_16", "0").strip())
 AHASH = os.environ.get("KEY_17", "").strip()
@@ -18,7 +19,7 @@ SHOW1 = "68354cfb2d3fded2dcca04e1"  # poster lock to clear (user-approved re-upl
 
 
 def sb_json(url, method="GET", body=None):
-    hdrs = {"apikey": SB, "Authorization": f"Bearer {SB}", "Content-Type": "application/json"}
+    hdrs = {"apikey": SBKEY, "Authorization": f"Bearer {SBKEY}", "Content-Type": "application/json"}
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -76,7 +77,7 @@ def main():
     # ---------- Supabase episodes delete ----------
     print("== [3/4] supabase episodes delete ==", flush=True)
     try:
-        hdrs = {"apikey": SB, "Authorization": f"Bearer {SB}", "Prefer": "return=minimal"}
+        hdrs = {"apikey": SBKEY, "Authorization": f"Bearer {SBKEY}", "Prefer": "return=minimal"}
         req = urllib.request.Request(
             f"{SB}/rest/v1/episodes?id=in.({id_in})", method="DELETE", headers=hdrs)
         with urllib.request.urlopen(req, timeout=30) as r:
