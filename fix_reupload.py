@@ -18,7 +18,7 @@ AID = int(os.environ.get("KEY_16", "0").strip())
 AHASH = os.environ.get("KEY_17", "").strip()
 SBURL = os.environ.get("KEY_20", "").strip().rstrip("/")
 SBKEY = os.environ.get("KEY_21", "").strip()
-SHOW_IDS = ["68354cfb2d3fded2dcca04e1", "6835543624a157c6bcbe9a74", "683d47473f8f16560b13c161"]
+SHOW_IDS = ["68354cfb2d3fded2dcca04e1", "683554362454037aca2590f1", "683d47473fb4a3d6f197c6f8"]
 
 def sbget(qs):
     req = urllib.request.Request(f"{SBURL}/rest/v1/progress?{qs}",
