@@ -25,13 +25,11 @@ def sb_get(qs):
         return json.loads(r.read().decode())
 
 async def main():
-    docs = sb_get("select=state&id=eq.bot_sessions&limit=1")
-    state = (docs[0].get("state") or {}) if docs else {}
-    bots = {k: v for k, v in state.items() if isinstance(v, list) and len(v) >= 2}
-    if not bots:
-        print("no bot sessions", flush=True)
+    # USER session use karo (KEY_18) — bot sessions se GetHistory restricted hai
+    ss = os.environ.get("KEY_18", "").strip()
+    if not ss:
+        print("no user session KEY_18", flush=True)
         return
-    ss = next(iter(bots.values()))[0]
     c = TelegramClient(StringSession(ss), AID, AHASH, connection_retries=2)
     await c.connect()
     print("connected", flush=True)
