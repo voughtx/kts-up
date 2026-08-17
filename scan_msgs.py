@@ -39,10 +39,11 @@ async def main():
             out.append(f"=== msg {mid} | ERR {str(e)[:60]} ===\n")
         await asyncio.sleep(0.12)
     # write to workspace file (user reads it — not me)
-    # repo root me likho (runner cwd) — main download kar ke user ko dunga
-    with open("captions_7852_7876.txt", "w") as f:
-        f.write("\n".join(out))
-    print("written captions file to repo root", flush=True)
+    # stdout pe full captions print (main log se file banata hoon — user ke liye)
+    print("===CAPTIONS_START===", flush=True)
+    for line in out:
+        print(line, flush=True)
+    print("===CAPTIONS_END===", flush=True)
     await c.disconnect()
     print("[done]", flush=True)
 
