@@ -37,7 +37,7 @@ async def main():
     print("channel:", getattr(ent, "title", CH), flush=True)
     pinned = []
     # saare pinned messages dhundho — reverse iterate (posters sabse purane)
-    async for m in c.iter_messages(ent, reverse=True, limit=3000):
+    async for m in c.iter_messages(ent, reverse=True, limit=8000):
         try:
             if m.pinned:
                 pinned.append(m.id)
@@ -45,12 +45,12 @@ async def main():
                 print(f"  PIN #{m.id} | {cap!r}", flush=True)
         except Exception:
             continue
-        if len(pinned) >= 300:
+        if len(pinned) >= 400:
             break
     print("TOTAL pinned found:", len(pinned), flush=True)
     # poster-style caption wale pinned count (Total • S)
     posters = []
-    async for m in c.iter_messages(ent, reverse=True, limit=3000):
+    async for m in c.iter_messages(ent, reverse=True, limit=8000):
         try:
             if m.pinned and "Total" in (m.message or "") and "S" in (m.message or ""):
                 posters.append(m.id)
