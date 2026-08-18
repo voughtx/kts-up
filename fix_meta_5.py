@@ -161,7 +161,8 @@ async def main():
     app = Client(":memory:",
         api_id=int(os.environ.get("KEY_16", "0").strip()),
         api_hash=os.environ.get("KEY_17", "").strip(),
-        session_string=os.environ.get("KEY_18", "").strip(),
+        session_string=os.environ.get("KEY_19", "").strip(),  # Pyrogram session (KEY_18 telethon hai)
+        workdir="/tmp",
     )
     await app.start()
     ok = 0
