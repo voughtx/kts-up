@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""fix_meta_5.py v3 — USER APPROVED: 5 posts (8127,8128,8130,8134,8139) edit.
-Approach: message se asli file_id -> download -> edit_message_media re-upload
-(file_name + thumbnail + caption) same message. Fallback: caption only.
-Output me kabhi title print nahi. DB rows update.
-"""
+"""fix_meta_5.py v4 — USER APPROVED: 5 posts edit. TELELTHON (KEY_18 session —
+app ke ordered-posts isi session se chalti hain, channel access confirmed).
+File download -> edit_message (replace file_name + thumb + caption), same message.
+Fallback: caption only. Output me kabhi title print nahi."""
 import os, sys, json, time, re, io, urllib.request, asyncio
 
 MIDS = [8127, 8128, 8130, 8134, 8139]
@@ -57,10 +56,9 @@ def build_caption(m):
     return "\n".join(lines)
 
 async def main():
-    # upgrade pyrogram to latest (InputMediaDocument file_name/thumb support)
-    os.system(f"{sys.executable} -m pip install -q -U pyrogram TgCrypto || true")
-    from pyrogram import Client
-    from pyrogram.types import InputMediaDocument
+    os.system(f"{sys.executable} -m pip install -q telethon || true")
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
 
     mids_in = ",".join(str(x) for x in MIDS)
     rows = sb_json(SB + f"/rest/v1/episodes?select=mid,id&mid=in.({mids_in})&order=mid.desc")
@@ -69,20 +67,20 @@ async def main():
         print("koi rows nahi — abort", flush=True)
         return
 
-    app = Client(":memory:",
-        api_id=int(os.environ.get("KEY_16", "0").strip()),
-        api_hash=os.environ.get("KEY_17", "").strip(),
-        session_string=os.environ.get("KEY_19", "").strip(),
-        workdir="/tmp",
-    )
-    await app.start()
-    chat_id = int(os.environ.get("KEY_2", "0").strip())
+    client = TelegramClient(StringSession(os.environ.get("KEY_18", "").strip()),
+                            int(os.environ.get("KEY_16", "0").strip()),
+                            os.environ.get("KEY_17", "").strip(),
+                            connection_retries=2)
+    await client.connect()
+    await client.get_me()
+    ch_id = int(os.environ.get("KEY_2", "0").strip())
     try:
-        chat = await app.get_chat(chat_id)
-        chat_id = chat.id
-        print("chat resolved OK", flush=True)
+        ent = await client.get_entity(ch_id)
+        print("entity resolved OK", flush=True)
     except Exception as e:
-        print("chat resolve fail:", str(e)[:60], flush=True)
+        print("entity resolve fail:", str(e)[:60], flush=True)
+        await client.disconnect()
+        return
 
     ok = 0
     for row in sorted(rows, key=lambda x: x["mid"]):
@@ -97,28 +95,20 @@ async def main():
         caption = build_caption(m)
         fname = f"{m.get('show_title') or 'Episode'} S{m.get('season')}E{m.get('episode')}.mp4"
         try:
-            # asli file_id message se (fid DB me document.id tha, galat)
-            msg = await app.get_messages(chat_id, mid)
-            if not msg or not msg.document:
-                print(f"mid {mid}: message/document nahi mila", flush=True)
+            msg = await client.get_messages(ent, ids=mid)
+            if msg is None:
+                print(f"mid {mid}: message nahi mila", flush=True)
                 continue
-            real_fid = msg.document.file_id
-            print(f"mid {mid}: doc file_id ok ({str(real_fid)[:20]}...)", flush=True)
-            # download actual file
-            path = await app.download_media(real_fid, in_memory=False)
+            path = await msg.download_media(file="/tmp/")
             if not path:
                 print(f"mid {mid}: download fail", flush=True)
                 continue
             sz = os.path.getsize(path)
             print(f"mid {mid}: downloaded {sz//1048576} MB", flush=True)
-            media = InputMediaDocument(
-                media=path,
-                file_name=fname,
-                thumb=thumb_path,
-                caption=caption,
-                parse_mode="html",
-            )
-            await app.edit_message_media(chat_id, mid, media)
+            # edit_message replace: file_name + thumb + caption (same message)
+            await client.edit_message(ent, mid, file=path, thumb=thumb_path,
+                                      caption=caption, parse_mode="html",
+                                      force_document=True)
             try:
                 os.remove(path)
             except Exception:
@@ -126,14 +116,14 @@ async def main():
             print(f"mid {mid}: EDITED OK (fname+thumb+caption)", flush=True)
             ok += 1
         except Exception as e:
-            print(f"mid {mid}: edit fail ({str(e)[:80]}) — caption fallback", flush=True)
+            print(f"mid {mid}: edit fail ({str(e)[:90]}) — caption fallback", flush=True)
             try:
-                await app.edit_message_caption(chat_id, mid, caption, parse_mode="html")
+                await client.edit_message(ent, mid, caption, parse_mode="html")
                 print(f"mid {mid}: caption-only OK", flush=True)
                 ok += 1
             except Exception as e2:
-                print(f"mid {mid}: caption fail ({str(e2)[:60]})", flush=True)
-        # DB update (best effort)
+                print(f"mid {mid}: caption fail ({str(e2)[:70]})", flush=True)
+        # DB update (best effort — show/season/episode/thumb)
         try:
             sb_json(SB + f"/rest/v1/episodes?id=eq.{eid}", "PATCH",
                     {"show": m.get("show_title"), "season": m.get("season"),
@@ -142,7 +132,7 @@ async def main():
             print(f"mid {mid}: DB updated", flush=True)
         except Exception as e:
             print(f"mid {mid}: DB fail {str(e)[:50]}", flush=True)
-    await app.stop()
+    await client.disconnect()
     print(f"[done] ok={ok}/{len(rows)}", flush=True)
 
 if __name__ == "__main__":
