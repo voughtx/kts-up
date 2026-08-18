@@ -58,7 +58,7 @@ def get_meta(eid, tok):
                 sh = sid.get("showId") or {}
                 if isinstance(sh, dict):
                     show = sh
-            return {
+            m = {
                 "title": dd.get("title") or "",
                 "season": dd.get("seasonNumber") or dd.get("season_number"),
                 "episode": dd.get("episodeNumber") or dd.get("episode_number"),
@@ -66,6 +66,10 @@ def get_meta(eid, tok):
                 "show_id": (show.get("_id") or ""),
                 "show_image": (show.get("image") or ""),
             }
+            # API season field missing (inconsistency) — ye Obocchama S1 hain (verified)
+            if m["season"] is None and str(eid).endswith("2ca54c59") or str(eid).endswith("2ca54c5a") or str(eid).endswith("2ca54c5b") or str(eid).endswith("2ca54c5c") or str(eid).endswith("2ca54c5d"):
+                m["season"] = 1
+            return m
         except Exception:
             import time
             time.sleep(2)
