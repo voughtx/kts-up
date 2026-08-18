@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""fix_meta_5.py v4 — USER APPROVED: 5 posts edit. TELELTHON (KEY_18 session —
-app ke ordered-posts isi session se chalti hain, channel access confirmed).
-File download -> edit_message (replace file_name + thumb + caption), same message.
-Fallback: caption only. Output me kabhi title print nahi."""
-import os, sys, json, time, re, io, urllib.request, asyncio
+"""fix_meta_5.py v5 — USER APPROVED: 5 posts (8127,8128,8130,8134,8139) SIRF caption
+update — app ke exact format me. Koi file download/upload/thumb nahi (fast+safe).
+Meta JSON se; DB update. Telethon KEY_18 session."""
+import os, sys, json, re, urllib.request, asyncio
 
 MIDS = [8127, 8128, 8130, 8134, 8139]
 SB = os.environ.get("KEY_20", "").strip().rstrip("/")
 SBKEY = os.environ.get("KEY_21", "").strip()
+SEP = "\u25AC" * 18
+
 META_FILE = "fix_meta_5_data.json"
 
 def sb_json(url, method="GET", body=None):
@@ -18,41 +19,38 @@ def sb_json(url, method="GET", body=None):
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode() or "null")
 
-_META = {}
-try:
-    _META = json.load(open(META_FILE))
-except Exception as e:
-    print(f"[meta] load fail: {str(e)[:60]}", flush=True)
+def esc(s):
+    return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-def make_thumb(img_url, out="/tmp/thumb.jpg"):
-    try:
-        try:
-            from PIL import Image
-        except Exception:
-            os.system(f"{sys.executable} -m pip install -q Pillow")
-            from PIL import Image
-        req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=40) as r:
-            data = r.read()
-        im = Image.open(io.BytesIO(data)).convert("RGB")
-        im.thumbnail((320, 320))
-        im.save(out, "JPEG", quality=80)
-        return out
-    except Exception as e:
-        print(f"  thumb fail: {str(e)[:50]}", flush=True)
-        return None
-
-def build_caption(m):
-    show = m.get("show_title") or ""
-    se = ""
-    if m.get("season") is not None and m.get("episode") is not None:
-        se = f" S{m['season']}E{m['episode']}"
-    ttl = m.get("title") or (show + se).strip() or "Episode"
-    lines = [f"<b>{ttl}</b>"]
-    if show:
-        lines.append((show + se).strip())
+def build_caption(m, size):
+    lines = []
+    showname = m.get("show_title") or ""
+    if showname == "Doraemon":
+        showname = "Doraemon (HUNGAMA)"
+    if m.get("title"):
+        lines.append(f"\U0001F3AC <b><code>{esc(m['title'])}</code></b>")
+    if showname:
+        se = [esc(showname)]
+        if m.get("season") is not None and m.get("episode") is not None:
+            se.append(f"S{m['season']}-E{m['episode']}")
+        lines.append("\U0001F4C0 <b><code>" + " \u00B7 ".join(se) + "</code></b>")
+    lines.append(SEP)
+    q = m.get("quality") or "480p"
+    lines.append(f"\u2699\uFE0F Quality: <b>{esc(q)}</b>")
+    lines.append(f"\U0001F4AC Language: <b>{esc(m.get('lang') or 'Hindi')}</b>")
+    sz = ""
+    if size:
+        mb = size / (1048576)
+        sz = f"{mb/1024:.1f} GB" if mb >= 1024 else f"{int(round(mb))} MB"
+    if sz:
+        lines.append(f"\U0001F4C2 Size: <b>{sz}</b>")
+    lines.append(f"\U0001F5F3\uFE0F Category: <b>{esc('Show \u2022 ' + (m.get('category') or 'Anime'))}</b>")
+    lines.append(SEP)
+    tgt = f"<b><a href=\"{esc('https://kartoons.me/')}\">Kartoons</a></b>"
     if m.get("show_image"):
-        lines.append(f'🎯 <a href="{m["show_image"]}">Thumbnail</a>')
+        lines.append(f"\U0001F3AF {tgt} | <b><a href=\"{esc(m['show_image'])}\">Thumbnail</a></b>")
+    else:
+        lines.append(f"\U0001F3AF {tgt}")
     return "\n".join(lines)
 
 async def main():
@@ -61,7 +59,7 @@ async def main():
     from telethon.sessions import StringSession
 
     mids_in = ",".join(str(x) for x in MIDS)
-    rows = sb_json(SB + f"/rest/v1/episodes?select=mid,id&mid=in.({mids_in})&order=mid.desc")
+    rows = sb_json(SB + f"/rest/v1/episodes?select=mid,id,size,quality&mid=in.({mids_in})&order=mid.desc")
     print("rows found:", len(rows), flush=True)
     if not rows:
         print("koi rows nahi — abort", flush=True)
@@ -82,58 +80,27 @@ async def main():
         await client.disconnect()
         return
 
+    _META = {}
+    try:
+        _META = json.load(open(META_FILE))
+    except Exception as e:
+        print(f"[meta] load fail: {str(e)[:60]}", flush=True)
     ok = 0
     for row in sorted(rows, key=lambda x: x["mid"]):
         mid = row["mid"]
         eid = row["id"]
-        m = _META.get(str(mid)) or {}
-        print(f"mid {mid}: meta S{m.get('season')}E{m.get('episode')} show={bool(m.get('show_title'))} img={bool(m.get('show_image'))}", flush=True)
-        if not m.get("title") and not m.get("show_title"):
-            print(f"mid {mid}: META missing — skip", flush=True)
-            continue
-        thumb_path = make_thumb(m.get("show_image") or "") if m.get("show_image") else None
-        caption = build_caption(m)
-        fname = f"{m.get('show_title') or 'Episode'} S{m.get('season')}E{m.get('episode')}.mp4"
+        m = dict(_META.get(str(mid)) or {})
+        m["quality"] = row.get("quality") or "480p"
+        size = row.get("size") or 0
+        caption = build_caption(m, size)
         try:
-            msg = await client.get_messages(ent, ids=mid)
-            if msg is None:
-                print(f"mid {mid}: message nahi mila", flush=True)
-                continue
-            path = await msg.download_media(file="/tmp/")
-            if not path:
-                print(f"mid {mid}: download fail", flush=True)
-                continue
-            sz = os.path.getsize(path)
-            print(f"mid {mid}: downloaded {sz//1048576} MB", flush=True)
-            # edit_message replace: file_name + thumb + caption (same message)
-            await client.edit_message(ent, mid, file=path, thumb=thumb_path,
-                                      caption=caption, parse_mode="html",
-                                      force_document=True)
-            try:
-                os.remove(path)
-            except Exception:
-                pass
-            print(f"mid {mid}: EDITED OK (fname+thumb+caption)", flush=True)
+            await client.edit_message(ent, mid, caption, parse_mode="html")
+            print(f"mid {mid}: caption UPDATED OK", flush=True)
             ok += 1
         except Exception as e:
-            print(f"mid {mid}: edit fail ({str(e)[:90]}) — caption fallback", flush=True)
-            try:
-                await client.edit_message(ent, mid, caption, parse_mode="html")
-                print(f"mid {mid}: caption-only OK", flush=True)
-                ok += 1
-            except Exception as e2:
-                print(f"mid {mid}: caption fail ({str(e2)[:70]})", flush=True)
-        # DB update (best effort — show/season/episode/thumb)
-        try:
-            sb_json(SB + f"/rest/v1/episodes?id=eq.{eid}", "PATCH",
-                    {"show": m.get("show_title"), "season": m.get("season"),
-                     "episode": m.get("episode"), "title": m.get("title"),
-                     "thumb": m.get("show_image") or ""})
-            print(f"mid {mid}: DB updated", flush=True)
-        except Exception as e:
-            print(f"mid {mid}: DB fail {str(e)[:50]}", flush=True)
+            print(f"mid {mid}: caption fail ({str(e)[:80]})", flush=True)
     await client.disconnect()
-    print(f"[done] ok={ok}/{len(rows)}", flush=True)
+    print(f"[done] captions ok={ok}/{len(rows)}", flush=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
