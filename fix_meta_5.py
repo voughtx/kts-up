@@ -42,24 +42,17 @@ def relay(path):
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode())
 
-def get_meta(eid):
-    """Episode meta — sirf fields chahiye (title kabhi print nahi)."""
-    d = relay(f"/shows/episode/{eid}")
-    dd = (d or {}).get("data") or {}
-    sid = dd.get("seasonId") or {}
-    show = {}
-    if isinstance(sid, dict):
-        sh = sid.get("showId") or {}
-        if isinstance(sh, dict):
-            show = sh
-    return {
-        "title": dd.get("title") or "",
-        "season": dd.get("seasonNumber") or dd.get("season_number"),
-        "episode": dd.get("episodeNumber") or dd.get("episode_number"),
-        "show_title": (show.get("title") or ""),
-        "show_id": (show.get("_id") or ""),
-        "show_image": (show.get("image") or ""),
-    }
+# META DATA FILE — sandbox se pre-fetched (runner pe kartoons API block hai)
+META_FILE = "fix_meta_5_data.json"
+_META = {}
+try:
+    _META = json.load(open(META_FILE))
+except Exception as e:
+    print(f"[meta] load fail: {str(e)[:60]}", flush=True)
+
+def get_meta(mid):
+    """Meta JSON se (mid-keyed). Title kabhi print nahi."""
+    return _META.get(str(mid)) or {}
 
 def make_thumb(img_url, out="/tmp/thumb.jpg"):
     """Poster -> 320px JPEG thumbnail."""
@@ -96,7 +89,7 @@ def build_caption(m, mid, has_thumb_url):
 
 async def fix_post(app, mid, eid, dbrow):
     from pyrogram.types import InputMediaDocument
-    m = get_meta(eid)
+    m = get_meta(mid)
     print(f"mid {mid}: meta S{m.get('season')}E{m.get('episode')} show={bool(m.get('show_title'))} img={bool(m.get('show_image'))}", flush=True)
     if not m.get("title") and not m.get("show_title"):
         print(f"mid {mid}: META FAIL — skip (guard)", flush=True)
