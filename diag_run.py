@@ -80,6 +80,26 @@ def main():
     except Exception as e:
         log(f"[diag] 4) mongo FAIL: {str(e)[:100]}")
 
+    # 4b) postctl + claims (mongo)
+    try:
+        from pymongo import MongoClient
+        uri = os.environ.get("KEY_7", "").strip()
+        cli2 = MongoClient(uri, serverSelectionTimeoutMS=15000)
+        db2 = cli2["kts"]
+        pc = db2.postctl.find_one({"_id": "post"})
+        if pc:
+            import time as _t
+            print(f"[diag] 4b) postctl next_seq={pc.get('next_seq')} lock={str(pc.get('lock') or '')[:12]} lock_at={pc.get('lock_at')} age={int(_t.time()-(pc.get('lock_at') or 0))}s", flush=True)
+        else:
+            print("[diag] 4b) postctl NONE", flush=True)
+        cl = list(db2.claims.find().sort("at", -1).limit(8))
+        print(f"[diag] 4b) claims: {len(cl)}", flush=True)
+        for c in cl:
+            print(f"   claim {c['_id'][-8:]} age={int(_t.time()-c.get('at',0))}s", flush=True)
+        cli2.close()
+    except Exception as e:
+        print(f"[diag] 4b) FAIL: {str(e)[:80]}", flush=True)
+
     # 5) first pickable ep meta via relay
     try:
         eid = None
