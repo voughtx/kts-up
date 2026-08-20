@@ -54,6 +54,37 @@ def main():
     except Exception as e:
         log(f"[diag] 2) pool FAIL: {str(e)[:100]}")
 
+
+    # 2c) DIRECT auth + meta (runner IP se kartoons direct chalta hai?)
+    try:
+        tok2 = ""
+        for t in toks[:5]:
+            try:
+                req = urllib.request.Request("https://api.kartoons.me/api/auth/me",
+                    headers={"Authorization": "Bearer " + t, "X-Challenge-Token": t,
+                             "User-Agent": "Mozilla/5.0", "Origin": "https://kartoons.me/", "Referer": "https://kartoons.me/"})
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    if r.status == 200:
+                        tok2 = t
+                        break
+            except urllib.error.HTTPError as e:
+                continue
+            except Exception:
+                continue
+        log(f"[diag] 2c) DIRECT auth alive: {bool(tok2)}")
+        if tok2:
+            try:
+                req = urllib.request.Request("https://api.kartoons.me/api/shows/episode/68e0eb783bd892992ca54c63",
+                    headers={"Authorization": "Bearer " + tok2, "X-Challenge-Token": tok2,
+                             "User-Agent": "Mozilla/5.0", "Origin": "https://kartoons.me/", "Referer": "https://kartoons.me/"})
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    b = r.read().decode()
+                    log(f"[diag] 2d) DIRECT meta: {r.status} ok={'\"success\":true' in b}")
+            except urllib.error.HTTPError as e:
+                log(f"[diag] 2d) DIRECT meta: HTTP {e.code}")
+    except Exception as e:
+        log(f"[diag] 2c) DIRECT FAIL: {str(e)[:80]}")
+
     # 3) cands fetch
     try:
         req = urllib.request.Request(SB + "/rest/v1/progress?select=state&id=eq.cands&limit=1",
