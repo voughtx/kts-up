@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""fix_e1.py — Infinity Nado S1E1 missing post + poster + DB. Position-only logs."""
+import os, sys, json, re, time, urllib.request, urllib.parse
+
+SID = "6992b11d1f6494bacadcbd74"
+E1 = "6992b1441f6494bacadcbd7a"
+SHOW = "Infinity Nado"
+SEASON, EP = 1, 1
+
+SB = os.environ.get("KEY_20", "").strip().rstrip("/")
+SBK = os.environ.get("KEY_21", "").strip()
+BASE = os.environ.get("KEY_8", "https://api.kartoons.me/api").strip()
+CH = int(os.environ.get("KEY_2", "0").strip())
+API_ID = os.environ.get("KEY_16", "").strip()
+API_HASH = os.environ.get("KEY_17", "").strip()
+SESS = os.environ.get("KEY_18", "").strip()
+WEB = os.environ.get("KEY_15", "").strip()
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0"
+
+def log(m):
+    print("[e1] " + m, flush=True)
+
+def sb_json(url, method="GET", body=None):
+    hdrs = {"apikey": SBK, "Authorization": f"Bearer {SBK}", "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates"}
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode() or "null")
+
+def sb_post(table, row):
+    req = urllib.request.Request(SB + "/rest/v1/" + table,
+        data=json.dumps(row).encode(), method="POST",
+        headers={"apikey": SBK, "Authorization": f"Bearer {SBK}", "Content-Type": "application/json",
+                 "Prefer": "resolution=merge-duplicates"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.status
+
+def get_token():
+    d = sb_json(SB + "/rest/v1/progress?select=state&id=eq.tk_voughtx_kts-up&limit=1")
+    st = d[0]["state"] if d else {}
+    toks = st.get("tokens") or []
+    idx = int(st.get("idx") or 0)
+    return toks[idx % len(toks)] if toks else ""
+
+def api(path, timeout=40):
+    req = urllib.request.Request(BASE + path, headers={
+        "User-Agent": UA, "Accept": "application/json",
+        "Origin": "https://kartoons.me/", "Referer": "https://kartoons.me/",
+        "Authorization": "Bearer " + TOK, "X-Challenge-Token": TOK})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+def fetch(url, timeout=60):
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://kartoons.me/", "Origin": "https://kartoons.me/"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+def dec_gcm(s):
+    try:
+        from Crypto.Cipher import AES
+    except Exception:
+        os.system(f"{sys.executable} -m pip install -q pycryptodome")
+        from Crypto.Cipher import AES
+    import base64, hashlib
+    raw = base64.b64decode(s)
+    key = hashlib.sha256(("kartoons-me-2025" ).encode()).digest()
+    nonce = raw[:12]; tag = raw[12:28]; ct = raw[28:]
+    c = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    return c.decrypt_and_verify(ct, tag).decode()
+
+def dec_url(s):
+    if s.startswith("enc:"):
+        try:
+            return dec_gcm(s[4:])
+        except Exception:
+            return s
+    return s
+
+def main():
+    global TOK
+    TOK = get_token()
+    log("token tail " + TOK[-6:] + " | api_id len " + str(len(API_ID)) + " | sess len " + str(len(SESS)))
+
+    # 1) episode detail
+    j = api(f"/episodes/{E1}")
+    d = j.get("data") or j
+    title = d.get("title") or ""
+    ep_num = d.get("episodeNumber") or EP
+    log(f"ep detail title_len={len(title)} epNum={ep_num} links={len(d.get('links') or [])}")
+    links = []
+    for ln in (d.get("links") or []):
+        if not isinstance(ln, dict) or not ln.get("url"):
+            continue
+        u = dec_url(ln["url"])
+        if re.search(r"(playlist|\.m3u8)", u, re.I):
+            links.append(u)
+    log("playlist links: " + str(len(links)))
+    if not links:
+        log("FAIL no playlist")
+        return
+
+    # 2) master + best variant
+    master = None
+    for u in links:
+        try:
+            body = fetch(u).decode()
+            if body.lstrip().startswith("#EXTM3U"):
+                master = body
+                log("master got len " + str(len(body)))
+                break
+        except Exception as ex:
+            log("master fail " + str(ex)[:60])
+    if master is None:
+        log("FAIL no master")
+        return
+
+    # 3) download via ffmpeg (direct segments) — try local convert helper style
+    import subprocess
+    out = f"/tmp/e1_{E1[-6:]}.mp4"
+    # if segments are direct http (no enc2), ffmpeg can pull m3u8 directly
+    if "enc2:" in master:
+        log("enc2 segments — manual decrypt needed, try ffmpeg anyway")
+    try:
+        r = subprocess.run(["ffmpeg", "-y", "-allowed_extensions", "ALL", "-i", links[0],
+                            "-c", "copy", "-bsf:a", "aac_adtstoasc", out],
+                           capture_output=True, text=True, timeout=1500)
+        log("ffmpeg rc " + str(r.returncode))
+        if r.returncode != 0:
+            log("ffmpeg err " + r.stderr[-200:].replace("\n", " "))
+            return
+    except Exception as ex:
+        log("ffmpeg ex " + str(ex)[:100])
+        return
+    sz = os.path.getsize(out)
+    log("file size " + str(sz))
+    if sz < 500000:
+        log("FAIL too small")
+        return
+
+    # 4) probe
+    try:
+        pr = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams",
+                             "-select_streams", "v:0", out], capture_output=True, text=True, timeout=60)
+        s0 = json.loads(pr.stdout)["streams"][0]
+        dur = float(s0.get("duration", 0)); w = int(s0.get("width", 0)); h = int(s0.get("height", 0))
+        log(f"probe dur={dur:.0f} {w}x{h}")
+    except Exception:
+        dur = w = h = 0
+
+    # 5) thumbnail (episode image se)
+    thumb = None
+    img = d.get("image") or ""
+    if img:
+        try:
+            tpath = "/tmp/e1_thumb.jpg"
+            raw = fetch(img)
+            open(tpath, "wb").write(raw)
+            from PIL import Image
+            im = Image.open(tpath); im.thumbnail((320, 320))
+            if im.mode != "RGB": im = im.convert("RGB")
+            im.save(tpath, "JPEG", quality=80)
+            thumb = tpath
+            log("thumb ok")
+        except Exception as ex:
+            log("thumb fail " + str(ex)[:60])
+
+    # 6) post via telethon (user session)
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from telethon.tl.types import DocumentAttributeFilename
+    import asyncio
+
+    q = "1080p" if (w and h and h >= 1080) else ("720p" if (w and h and h >= 720) else "")
+    fname = re.sub(r'[^A-Za-z0-9 _.-]', '', (title or SHOW))[:80] + f" S{SEASON}E{EP}" + (f" {q}" if q else "") + ".mp4"
+    web = (WEB + "episodeId=" + E1) if WEB else ""
+    dom = "Kartoons"
+    cap = f"<b>{re.sub(r'[<>&]', lambda m: {'<':'&lt;','>':'&gt;','&':'&amp;'}[m.group()], title)}</b>\n" \
+          f"<b>{re.sub(r'[<>&]', lambda m: {'<':'&lt;','>':'&gt;','&':'&amp;'}[m.group()], SHOW)} · S{SEASON}-E{EP}</b>\n" \
+          "──────────────────\n" \
+          + (f"⚙️ Quality: <b>{q}</b>\n" if q else "") + \
+          "💬 Language: <b>Hindi</b>\n" \
+          + (f"📂 Size: <b>{sz//1000000} MB</b>\n" if sz else "") + \
+          (f"🕐 Duration: <b>{int(dur/60)} min</b>\n" if dur else "") + \
+          "🗳️ Category: <b>Show</b>\n──────────────────\n" \
+          + (f"🎯 <b><a href=\"{web}\">{dom}</a></b>" if web else "")
+
+    async def post():
+        client = TelegramClient(StringSession(SESS), int(API_ID), API_HASH)
+        await client.connect()
+        try:
+            ent = await client.get_entity(CH)
+            msg = await client.send_file(ent, out, force_document=True, caption=cap,
+                                         parse_mode="html", thumb=thumb,
+                                         attributes=[DocumentAttributeFilename(file_name=fname)])
+            return msg.id
+        finally:
+            await client.disconnect()
+
+    mid = asyncio.run(post())
+    log("posted mid=" + str(mid))
+
+    # 7) DB row
+    try:
+        st2 = sb_post("episodes", [{"id": E1, "mid": mid, "season": SEASON, "episode": EP,
+                                    "show": SHOW, "at": int(time.time())}])
+        log("db insert " + str(st2))
+    except Exception as ex:
+        log("db fail " + str(ex)[:80])
+
+    # 8) poster (showlist se) + pin
+    try:
+        d2 = sb_json(SB + "/rest/v1/progress?select=state&id=eq.showlist&limit=1")
+        ent2 = None
+        for e in d2[0]["state"]["shows"]:
+            if e.get("name") == SHOW:
+                ent2 = e; break
+        poster_url = (ent2 or {}).get("poster") or ""
+        pcap = f"<b>{SHOW}</b>\nTotal • S1 | Ep{ent2.get('total') if ent2 else 26}"
+        if poster_url:
+            pimg = "/tmp/e1_poster.jpg"
+            open(pimg, "wb").write(fetch(poster_url))
+            async def post_poster():
+                client = TelegramClient(StringSession(SESS), int(API_ID), API_HASH)
+                await client.connect()
+                try:
+                    entx = await client.get_entity(CH)
+                    m2 = await client.send_file(entx, pimg, caption=pcap, parse_mode="html")
+                    try:
+                        await client.pin_message(entx, m2.id)
+                        log("poster pinned")
+                    except Exception:
+                        log("poster pin fail")
+                    return m2.id
+                finally:
+                    await client.disconnect()
+            pmid = asyncio.run(post_poster())
+            log("poster mid=" + str(pmid))
+    except Exception as ex:
+        log("poster fail " + str(ex)[:80])
+
+    log("DONE")
+
+if __name__ == "__main__":
+    main()
