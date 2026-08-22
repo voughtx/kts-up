@@ -1,0 +1,21 @@
+name: e1
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: go
+        env:
+          KEY_3: ${{ secrets.KEY_3 }}
+          KEY_8: ${{ secrets.KEY_8 }}
+          KEY_20: ${{ secrets.KEY_20 }}
+          KEY_21: ${{ secrets.KEY_21 }}
+        run: python diag_e1.py
