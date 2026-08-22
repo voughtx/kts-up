@@ -22,6 +22,7 @@ jobs:
           KEY_2: ${{ secrets.KEY_2 }}
           KEY_8: ${{ secrets.KEY_8 }}
           KEY_9: ${{ secrets.KEY_9 }}
+          KEY_10: ${{ secrets.KEY_10 }}
           KEY_15: ${{ secrets.KEY_15 }}
           KEY_16: ${{ secrets.KEY_16 }}
           KEY_17: ${{ secrets.KEY_17 }}
