@@ -16,6 +16,7 @@ API_HASH = os.environ.get("KEY_17", "").strip()
 SESS = os.environ.get("KEY_18", "").strip()
 WEB = os.environ.get("KEY_15", "").strip()
 K9 = os.environ.get("KEY_9", "").strip()
+G10 = os.environ.get("KEY_10", "").strip()
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0"
 
 def log(m):
@@ -57,18 +58,20 @@ def fetch(url, timeout=60):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
-def dec_gcm(s):
+def dec_gcm(enc):
     try:
         from Crypto.Cipher import AES
     except Exception:
         os.system(f"{sys.executable} -m pip install -q pycryptodome")
         from Crypto.Cipher import AES
     import base64, hashlib
-    raw = base64.b64decode(s)
-    key = hashlib.sha256(("kartoons-me-2025" ).encode()).digest()
-    nonce = raw[:12]; tag = raw[12:28]; ct = raw[28:]
-    c = AES.new(key, AES.MODE_GCM, nonce=nonce)
-    return c.decrypt_and_verify(ct, tag).decode()
+    s = enc[5:] if enc.startswith("enc2:") else enc
+    raw = b64u(s)
+    iv, body = raw[:12], raw[12:]
+    key = hashlib.sha256(G10.encode()).digest()
+    ct, tag = body[:-16], body[-16:]
+    c = AES.new(key, AES.MODE_GCM, nonce=iv)
+    return c.decrypt_and_verify(ct, tag).decode("utf-8", "replace")
 
 def b64u(s):
     b = s.replace("-", "+").replace("_", "/")
@@ -178,22 +181,103 @@ def main():
         log("FAIL no master")
         return
 
-    # 3) download via ffmpeg (direct segments) — try local convert helper style
-    import subprocess
+    # 3) local_convert: decrypt enc2 -> parallel download -> remux
+    import subprocess, concurrent.futures
+    out_lines = []
+    for ln in master.splitlines():
+        ln2 = ln.strip()
+        if ln2.startswith("enc2:"):
+            dec = dec_gcm(ln2)
+            out_lines.append(dec if dec.startswith("http") else ln)
+        elif ln2.startswith("#EXT-X-MAP:"):
+            m = re.search(r'URI="([^"]+)"', ln2)
+            if m and m.group(1).startswith("enc2:"):
+                dec = dec_gcm(m.group(1))
+                out_lines.append(ln2.replace(m.group(1), dec))
+            else:
+                out_lines.append(ln)
+        else:
+            out_lines.append(ln)
+    ptxt = "\n".join(out_lines)
+    media = [l for l in out_lines if l.startswith("http") and not l.startswith("#")]
+    log(f"decrypted media lines: {len(media)}")
+    if not ptxt.startswith("#EXTM3U") or "enc2:" in ptxt or not media:
+        log("FAIL playlist invalid")
+        return
+
+    seg_dir = "/tmp/e1_segs"
+    subprocess.run(f"rm -rf {seg_dir}", shell=True, capture_output=True)
+    os.makedirs(seg_dir, exist_ok=True)
+    jobs = []
+    for ln in out_lines:
+        l = ln.strip()
+        if l.startswith("#EXT-X-MAP:"):
+            m = re.search(r'URI="([^"]+)"', l)
+            if m:
+                u = m.group(1)
+                if not u.startswith("http"):
+                    u = urllib.parse.urljoin(links[0], u)
+                jobs.append(("map", u, l, m.group(1)))
+            else:
+                jobs.append(("pass", None, ln, None))
+        elif l.startswith("http"):
+            jobs.append(("seg", l, None, None))
+        else:
+            jobs.append(("pass", None, ln, None))
+
+    def dl(j):
+        kind, u, orig, mapu = j
+        if kind == "pass":
+            return j, True, b""
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": UA, "Referer": "https://kartoons.me/", "Origin": "https://kartoons.me/"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                b = r.read()
+            if kind == "map" and b and len(b) > 100:
+                return j, True, b
+            if kind == "seg" and b and len(b) > 188 and b[:1] != b"<":
+                return j, True, b
+            return j, False, b""
+        except Exception as ex:
+            return j, False, str(ex)[:40]
+
+    dl_map = {}
+    fails = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        for jj, ok, b in ex.map(dl, jobs):
+            if not ok:
+                fails.append(jj[1][:50] if jj[1] else "?")
+                break
+            dl_map[id(jj)] = b
+    if fails:
+        log("FAIL segment download: " + fails[0])
+        return
+    final_lines = []
+    seg_i = 0
+    for jj in jobs:
+        kind, u, orig, mapu = jj
+        if kind == "pass":
+            final_lines.append(orig)
+            continue
+        b = dl_map.get(id(jj))
+        if kind == "map":
+            fp = f"{seg_dir}/init_{seg_i}"; seg_i += 1
+            open(fp, "wb").write(b)
+            final_lines.append(orig.replace(mapu, fp))
+        else:
+            fp = f"{seg_dir}/seg_{seg_i}"; seg_i += 1
+            open(fp, "wb").write(b)
+            final_lines.append(fp)
+    log(f"segments saved: {seg_i}")
+    rp = "/tmp/e1_play.m3u8"
+    open(rp, "w").write("\n".join(final_lines))
     out = f"/tmp/e1_{E1[-6:]}.mp4"
-    # if segments are direct http (no enc2), ffmpeg can pull m3u8 directly
-    if "enc2:" in master:
-        log("enc2 segments — manual decrypt needed, try ffmpeg anyway")
-    try:
-        r = subprocess.run(["ffmpeg", "-y", "-allowed_extensions", "ALL", "-i", links[0],
-                            "-c", "copy", "-bsf:a", "aac_adtstoasc", out],
-                           capture_output=True, text=True, timeout=1500)
-        log("ffmpeg rc " + str(r.returncode))
-        if r.returncode != 0:
-            log("ffmpeg err " + r.stderr[-200:].replace("\n", " "))
-            return
-    except Exception as ex:
-        log("ffmpeg ex " + str(ex)[:100])
+    r = subprocess.run(["ffmpeg", "-y", "-allowed_extensions", "ALL", "-i", rp,
+                        "-c", "copy", "-bsf:a", "aac_adtstoasc", out],
+                       capture_output=True, text=True, timeout=1500)
+    log("ffmpeg rc " + str(r.returncode))
+    if r.returncode != 0:
+        log("ffmpeg err " + r.stderr[-200:].replace("\n", " "))
         return
     sz = os.path.getsize(out)
     log("file size " + str(sz))
