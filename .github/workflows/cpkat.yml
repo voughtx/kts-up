@@ -1,0 +1,21 @@
+name: cpkat
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: go
+        env:
+          PAT: ${{ secrets.PAT_NEW }}
+          KEY_11: ${{ secrets.KEY_11 }}
+          KEY_12: ${{ secrets.KEY_12 }}
+        run: |
+          pip install -q pynacl
+          python copy_kat.py
