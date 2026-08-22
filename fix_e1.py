@@ -15,6 +15,7 @@ API_ID = os.environ.get("KEY_16", "").strip()
 API_HASH = os.environ.get("KEY_17", "").strip()
 SESS = os.environ.get("KEY_18", "").strip()
 WEB = os.environ.get("KEY_15", "").strip()
+K9 = os.environ.get("KEY_9", "").strip()
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0"
 
 def log(m):
@@ -69,32 +70,94 @@ def dec_gcm(s):
     c = AES.new(key, AES.MODE_GCM, nonce=nonce)
     return c.decrypt_and_verify(ct, tag).decode()
 
+def b64u(s):
+    b = s.replace("-", "+").replace("_", "/")
+    b += "=" * ((4 - len(b) % 4) % 4)
+    import base64
+    return base64.b64decode(b)
+
+def dec_cbc(url):
+    try:
+        from Crypto.Cipher import AES
+        import base64
+        raw = b64u(url)
+        iv, ct = raw[:16], raw[16:]
+        c = AES.new(K9.encode()[:32], AES.MODE_CBC, iv)
+        pt = c.decrypt(ct)
+        pad = pt[-1]
+        if 1 <= pad <= 16 and pt[-pad:] == bytes([pad]) * pad:
+            pt = pt[:-pad]
+        return pt.decode("utf-8", "replace")
+    except Exception:
+        return url
+
 def dec_url(s):
-    if s.startswith("enc:"):
-        try:
-            return dec_gcm(s[4:])
-        except Exception:
-            return s
+    if not s:
+        return s
+    if s.startswith("enc2:"):
+        return dec_gcm(s)
+    if s.startswith("http"):
+        return s
+    if re.fullmatch(r"[A-Za-z0-9_\-+/=]+", s or ""):
+        dec = dec_cbc(s)
+        if dec != s and dec.startswith("http"):
+            return dec
     return s
+
+def pow_solve(nonce, bits):
+    import hashlib
+    zeros = "0" * (bits // 4)
+    extra = bits % 4
+    s = 0
+    while True:
+        hh = hashlib.sha256(f"{nonce}:{s}".encode()).hexdigest()
+        if hh.startswith(zeros):
+            if extra:
+                if int(hh[len(zeros)], 16) < (1 << (4 - extra)):
+                    return str(s)
+            else:
+                return str(s)
+        s += 1
 
 def main():
     global TOK
     TOK = get_token()
     log("token tail " + TOK[-6:] + " | api_id len " + str(len(API_ID)) + " | sess len " + str(len(SESS)))
 
-    # 1) episode detail
-    j = api(f"/episodes/{E1}")
+    # 1) episode detail (meta)
+    j = api(f"/shows/episode/{E1}")
     d = j.get("data") or j
     title = d.get("title") or ""
     ep_num = d.get("episodeNumber") or EP
-    log(f"ep detail title_len={len(title)} epNum={ep_num} links={len(d.get('links') or [])}")
+    log(f"ep meta title_len={len(title)} epNum={ep_num}")
+
+    # 2) links with PoW
+    content = "episode:" + E1
+    ch = api("/challenge/pow?content=" + urllib.parse.quote(content))
+    cd = ch.get("data") or {}
+    hdrs = {}
+    if cd.get("enabled") is not False:
+        nonce, bits = cd.get("nonce"), cd.get("bits", 16)
+        sol = pow_solve(nonce, bits)
+        hdrs = {"X-Pow-Nonce": nonce, "X-Pow-Solution": sol, "X-Challenge-Retry": "true"}
+        log(f"pow solved bits={bits} sol_len={len(sol)}")
+    lreq = urllib.request.Request(BASE + f"/shows/episode/{E1}/links", headers={
+        "User-Agent": UA, "Accept": "application/json",
+        "Origin": "https://kartoons.me/", "Referer": "https://kartoons.me/",
+        "Authorization": "Bearer " + TOK, "X-Challenge-Token": TOK, **hdrs})
+    with urllib.request.urlopen(lreq, timeout=30) as r:
+        lj = json.loads(r.read().decode())
+    ld = lj.get("data") or lj
+    lns = ld.get("links") if isinstance(ld, dict) else ld
     links = []
-    for ln in (d.get("links") or []):
+    for ln in (lns or []):
         if not isinstance(ln, dict) or not ln.get("url"):
             continue
         u = dec_url(ln["url"])
         if re.search(r"(playlist|\.m3u8)", u, re.I):
             links.append(u)
+        else:
+            log("non-playlist link: " + u[:50])
     log("playlist links: " + str(len(links)))
     if not links:
         log("FAIL no playlist")
