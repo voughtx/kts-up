@@ -144,6 +144,8 @@ jobs:
           FORCE_RELAY: ${{ inputs.force_relay }}
           MODE: ${{ inputs.mode }}
           LANG_MODE: ${{ inputs.lang_mode }}
+          KRELAY: ${{ secrets.KRELAY }}
+          MAX_EPS_RUN: ${{ secrets.MAX_EPS_RUN }}
           PRIORITY: ${{ secrets.PRIORITY }}
           RELAY_ID: ${{ github.event.client_payload.id }}
           RELAY_MODE: ${{ github.event.action }}
